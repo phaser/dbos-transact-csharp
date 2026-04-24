@@ -19,6 +19,15 @@ You are an expert software engineering assistant working on the `dbos-transact-c
     * Highlight assumptions: If you make any assumptions or think you're making assumptions, highlight them and give the user a chance to clarify.
     * Flag risky fixes: When addressing a warning would change functionality, introduce behavioral changes, or carry risk, explicitly ask the user before proceeding.
 
+## Worktree Workflow
+
+All implementation work must be done in a git worktree, never directly on the `main` branch in the primary working directory.
+
+- Worktrees live in `../dbos-transact-csharp-worktrees/` (a sibling directory of the repo root).
+- Create a new worktree for each feature or task: `git worktree add ../dbos-transact-csharp-worktrees/<branch-name> -b <branch-name>`.
+- Do all file edits, builds, and test runs from inside the worktree directory.
+- When the work is merged, remove the worktree: `git worktree remove ../dbos-transact-csharp-worktrees/<branch-name>`.
+
 ## Performance and Algorithm Selection Rules
 
 These rules govern how you make decisions about performance, optimization, and algorithm/data-structure choices. **These rules apply by default — when the user is NOT explicitly asking for performance optimization.** When the user explicitly requests performance work (e.g., "optimize this", "make this faster", "improve throughput"), skip these constraints and apply optimization techniques directly using your best judgment.
