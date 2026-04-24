@@ -1,0 +1,28 @@
+# Build outputs
+bin/
+obj/
+
+# NuGet
+*.user
+.nuget/
+packages/
+*.nupkg
+
+# IDE
+.vs/
+.vscode/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Rider
+*.DotSettings.user
+
+# dotnet tool
+.config/dotnet-tools.json.bak
