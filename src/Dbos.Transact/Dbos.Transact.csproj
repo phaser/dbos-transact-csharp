@@ -6,4 +6,9 @@
     </AssemblyAttribute>
   </ItemGroup>
 
+  <ItemGroup>
+    <EmbeddedResource Include="Migrations/Sql/Postgres/*.sql" />
+    <EmbeddedResource Include="Migrations/Sql/Sqlite/*.sql" />
+  </ItemGroup>
+
 </Project>
