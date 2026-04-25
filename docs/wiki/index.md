@@ -21,6 +21,8 @@ Master catalog of all wiki pages. Every page in the wiki must have an entry here
 | [[concepts/in-process-notification-optimization]] | notifications, performance, dialect-sqlite, dialect-postgres | high | 2026-04-24 |
 | [[concepts/no-orm-constraint]] | persistence, core, design-constraint | high | 2026-04-24 |
 | [[concepts/csharp-record-validation]] | csharp, records, validation, port-decision, foundational | high | 2026-04-25 |
+| [[concepts/asynclocal-vs-threadlocal]] | csharp, async, context, port-decision, foundational | high | 2026-04-25 |
+| [[concepts/appversion-signature-hashing]] | csharp, port-decision, versioning, foundational | high | 2026-04-25 |
 
 ## Entities
 
@@ -51,12 +53,12 @@ Master catalog of all wiki pages. Every page in the wiki must have an entry here
 
 ## Statistics
 
-- **Total pages**: 20
-- **Concepts**: 9
+- **Total pages**: 22
+- **Concepts**: 11
 - **Entities**: 10
 - **Summaries**: 1
 - **Syntheses**: 0
 - **Sources ingested**: 1
-- **High confidence**: 9
+- **High confidence**: 11
 - **Medium confidence**: 0
 - **Low confidence**: 0
