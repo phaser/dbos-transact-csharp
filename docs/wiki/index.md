@@ -23,6 +23,7 @@ Master catalog of all wiki pages. Every page in the wiki must have an entry here
 | [[concepts/csharp-record-validation]] | csharp, records, validation, port-decision, foundational | high | 2026-04-25 |
 | [[concepts/asynclocal-vs-threadlocal]] | csharp, async, context, port-decision, foundational | high | 2026-04-25 |
 | [[concepts/appversion-signature-hashing]] | csharp, port-decision, versioning, foundational | high | 2026-04-25 |
+| [[concepts/stj-polymorphic-discriminator]] | csharp, serialization, port-decision, conductor-protocol, json, foundational | high | 2026-04-25 |
 
 ## Entities
 
@@ -53,12 +54,12 @@ Master catalog of all wiki pages. Every page in the wiki must have an entry here
 
 ## Statistics
 
-- **Total pages**: 22
-- **Concepts**: 11
+- **Total pages**: 23
+- **Concepts**: 12
 - **Entities**: 10
 - **Summaries**: 1
 - **Syntheses**: 0
 - **Sources ingested**: 1
-- **High confidence**: 11
+- **High confidence**: 12
 - **Medium confidence**: 0
 - **Low confidence**: 0
