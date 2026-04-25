@@ -28,6 +28,10 @@ All implementation work must be done in a git worktree, never directly on the `m
 - Do all file edits, builds, and test runs from inside the worktree directory.
 - When the work is merged, remove the worktree: `git worktree remove ../dbos-transact-csharp-worktrees/<branch-name>`.
 
+## Upstream Reference Rule
+
+When porting from an upstream repo (Java, Python, TypeScript), prefer reading a local checkout over fetching from GitHub. Check `~/projects/` for an existing clone before making web requests. If no clone exists, do a shallow clone (`git clone --depth=1`) into `~/projects/<repo-name>` and read files directly. Only fall back to web fetches if a local clone is unavailable and cloning is not practical.
+
 ## Pull Request Rules
 
 - Always include `Closes #<issue-number>` in the PR body so GitHub auto-closes the linked issue on merge.
