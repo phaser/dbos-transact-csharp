@@ -28,6 +28,10 @@ All implementation work must be done in a git worktree, never directly on the `m
 - Do all file edits, builds, and test runs from inside the worktree directory.
 - When the work is merged, remove the worktree: `git worktree remove ../dbos-transact-csharp-worktrees/<branch-name>`.
 
+## Pull Request Rules
+
+- Always include `Closes #<issue-number>` in the PR body so GitHub auto-closes the linked issue on merge.
+
 ## Performance and Algorithm Selection Rules
 
 These rules govern how you make decisions about performance, optimization, and algorithm/data-structure choices. **These rules apply by default — when the user is NOT explicitly asking for performance optimization.** When the user explicitly requests performance work (e.g., "optimize this", "make this faster", "improve throughput"), skip these constraints and apply optimization techniques directly using your best judgment.
