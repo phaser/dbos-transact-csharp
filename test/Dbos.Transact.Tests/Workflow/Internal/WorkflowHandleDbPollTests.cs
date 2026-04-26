@@ -1,0 +1,134 @@
+using System.Data;
+using Dbos.Transact.Database;
+using Dbos.Transact.Database.Daos;
+using Dbos.Transact.Workflow;
+using Dbos.Transact.Workflow.Internal;
+
+namespace Dbos.Transact.Tests.Workflow.Internal;
+
+public class WorkflowHandleDbPollTests
+{
+    [Fact]
+    public void WorkflowId_ReturnsConstructedValue()
+    {
+        var db = new StubSystemDatabase(new ConstantWorkflowDao(null));
+        var handle = new WorkflowHandleDbPoll<int>(db, "wf-xyz");
+
+        Assert.Equal("wf-xyz", handle.WorkflowId);
+    }
+
+    [Fact]
+    public async Task GetStatusAsync_DelegatesToDatabase()
+    {
+        var expected = MakeStatus("wf-1");
+        var db = new StubSystemDatabase(new ConstantWorkflowDao(expected));
+        var handle = new WorkflowHandleDbPoll<int>(db, "wf-1");
+
+        var result = await handle.GetStatusAsync();
+
+        Assert.Equal(expected, result);
+    }
+
+    [Fact]
+    public async Task GetStatusAsync_NonExistentWorkflow_ReturnsNull()
+    {
+        var db = new StubSystemDatabase(new ConstantWorkflowDao(null));
+        var handle = new WorkflowHandleDbPoll<string>(db, "does-not-exist");
+
+        var result = await handle.GetStatusAsync();
+
+        Assert.Null(result);
+    }
+
+    private static WorkflowStatus MakeStatus(string id) => new(
+        WorkflowId: id, Status: WorkflowState.Success, WorkflowName: "TestWf",
+        ClassName: null, InstanceName: null, AuthenticatedUser: null, AssumedRole: null,
+        AuthenticatedRoles: null, Input: null, Output: null, Error: null, ExecutorId: null,
+        CreatedAt: null, UpdatedAt: null, AppVersion: null, AppId: null,
+        RecoveryAttempts: null, QueueName: null, Timeout: null, Deadline: null,
+        StartedAt: null, DeduplicationId: null, Priority: null, QueuePartitionKey: null,
+        ForkedFrom: null, ParentWorkflowId: null, WasForkedFrom: null,
+        DelayUntil: null, Serialization: null);
+
+    // ── Stubs ─────────────────────────────────────────────────────────────────
+
+    private sealed class StubSystemDatabase(WorkflowDao workflowDao) : SystemDatabase
+    {
+        protected override WorkflowDao WorkflowDao { get; } = workflowDao;
+        protected override StepsDao StepsDao { get; } = new NoOpStepsDao();
+        protected override QueuesDao QueuesDao { get; } = new NoOpQueuesDao();
+        protected override NotificationsDao NotificationsDao { get; } = new NoOpNotificationsDao();
+        protected override SchedulesDao SchedulesDao { get; } = new NoOpSchedulesDao();
+        protected override StreamsDao StreamsDao { get; } = new NoOpStreamsDao();
+
+        public override Task StartAsync(CancellationToken ct = default) => Task.CompletedTask;
+        public override ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class ConstantWorkflowDao(WorkflowStatus? status) : WorkflowDao
+    {
+        public override Task<WorkflowStatus?> GetWorkflowStatusAsync(string workflowId, CancellationToken ct = default) =>
+            Task.FromResult(status);
+
+        public override Task<WorkflowInitResult> InitWorkflowStatusAsync(WorkflowStatusInternal i, int m, bool r, bool d, CancellationToken ct = default) => throw new NotImplementedException();
+        public override Task RecordWorkflowOutputAsync(string w, string? result, CancellationToken ct = default) => throw new NotImplementedException();
+        public override Task RecordWorkflowErrorAsync(string w, string? errorPayload, CancellationToken ct = default) => throw new NotImplementedException();
+        public override Task<string?> GetWorkflowSerializationAsync(string w, CancellationToken ct = default) => throw new NotImplementedException();
+        public override Task<IReadOnlyList<WorkflowStatus>> ListWorkflowsAsync(ListWorkflowsInput i, CancellationToken ct = default) => throw new NotImplementedException();
+        public override Task<IReadOnlyList<WorkflowAggregateRow>> GetWorkflowAggregatesAsync(GetWorkflowAggregatesInput i, CancellationToken ct = default) => throw new NotImplementedException();
+        public override Task<IReadOnlyList<WorkflowStatus>> GetPendingWorkflowsAsync(IReadOnlyList<string> e, string? v, CancellationToken ct = default) => throw new NotImplementedException();
+        public override Task RecordChildWorkflowAsync(IDbConnection c, string w, int f, string ch, string? s, CancellationToken ct = default) => throw new NotImplementedException();
+        public override Task<string?> CheckChildWorkflowAsync(string w, int f, CancellationToken ct = default) => throw new NotImplementedException();
+        public override Task<T> AwaitWorkflowResultAsync<T>(string w, CancellationToken ct = default) => throw new NotImplementedException();
+        public override Task CancelWorkflowsAsync(IReadOnlyList<string> w, CancellationToken ct = default) => throw new NotImplementedException();
+        public override Task ResumeWorkflowsAsync(IReadOnlyList<string> w, string? q, CancellationToken ct = default) => throw new NotImplementedException();
+        public override Task DeleteWorkflowsAsync(IReadOnlyList<string> w, bool d, CancellationToken ct = default) => throw new NotImplementedException();
+        public override Task<string> ForkWorkflowAsync(string o, int s, ForkOptions f, CancellationToken ct = default) => throw new NotImplementedException();
+    }
+
+    private sealed class NoOpStepsDao : StepsDao
+    {
+        public override Task<StepResult> CheckStepExecutionTxnAsync(IDbConnection c, string w, int f, string n, CancellationToken ct = default) => throw new NotImplementedException();
+        public override Task RecordStepResultTxnAsync(IDbConnection c, StepResult r, long s, long e, CancellationToken ct = default) => throw new NotImplementedException();
+        public override Task<IReadOnlyList<StepInfo>> ListWorkflowStepsAsync(string w, bool l, int? lim, int? o, CancellationToken ct = default) => throw new NotImplementedException();
+        public override Task SleepAsync(string w, int f, TimeSpan d, CancellationToken ct = default) => throw new NotImplementedException();
+    }
+
+    private sealed class NoOpQueuesDao : QueuesDao
+    {
+        public override Task<bool> ClearQueueAssignmentAsync(string w, CancellationToken ct = default) => throw new NotImplementedException();
+        public override Task<IReadOnlyList<string>> GetQueuePartitionsAsync(string q, CancellationToken ct = default) => throw new NotImplementedException();
+        public override Task<IReadOnlyList<string>> GetAndStartQueuedWorkflowsAsync(Queue q, string e, string? v, string? p, CancellationToken ct = default) => throw new NotImplementedException();
+    }
+
+    private sealed class NoOpNotificationsDao : NotificationsDao
+    {
+        public override Task SendAsync(string w, int s, string d, object? m, string? t, string? id, string? ser, CancellationToken ct = default) => throw new NotImplementedException();
+        public override Task SendDirectAsync(string d, object? m, string? t, string? id, string? ser, CancellationToken ct = default) => throw new NotImplementedException();
+        public override Task<object?> RecvAsync(string w, int s, int ts, string? t, TimeSpan? to, CancellationToken ct = default) => throw new NotImplementedException();
+        public override Task SetEventAsync(string w, int f, string k, object? m, bool a, string? ser, CancellationToken ct = default) => throw new NotImplementedException();
+        public override Task<object?> GetEventAsync(string t, string k, TimeSpan? to, CancellationToken ct = default) => throw new NotImplementedException();
+        public override Task<NotificationInfo?> GetNotificationInfoAsync(string w, string k, CancellationToken ct = default) => throw new NotImplementedException();
+    }
+
+    private sealed class NoOpSchedulesDao : SchedulesDao
+    {
+        public override Task CreateScheduleAsync(WorkflowSchedule s, CancellationToken ct = default) => throw new NotImplementedException();
+        public override Task<IReadOnlyList<WorkflowSchedule>> ListSchedulesAsync(IReadOnlyList<ScheduleStatus>? st, IReadOnlyList<string>? wn, IReadOnlyList<string>? sp, CancellationToken ct = default) => throw new NotImplementedException();
+        public override Task<WorkflowSchedule?> GetScheduleAsync(string n, CancellationToken ct = default) => throw new NotImplementedException();
+        public override Task PauseScheduleAsync(string n, CancellationToken ct = default) => throw new NotImplementedException();
+        public override Task ResumeScheduleAsync(string n, CancellationToken ct = default) => throw new NotImplementedException();
+        public override Task UpdateScheduleLastFiredAtAsync(string n, DateTimeOffset l, CancellationToken ct = default) => throw new NotImplementedException();
+        public override Task DeleteScheduleAsync(string n, CancellationToken ct = default) => throw new NotImplementedException();
+        public override Task ApplySchedulesAsync(IReadOnlyList<WorkflowSchedule> s, CancellationToken ct = default) => throw new NotImplementedException();
+    }
+
+    private sealed class NoOpStreamsDao : StreamsDao
+    {
+        public override Task WriteStreamFromStepAsync(string w, int f, string k, object? v, string? s, CancellationToken ct = default) => throw new NotImplementedException();
+        public override Task WriteStreamFromWorkflowAsync(string w, int f, string k, object? v, string? s, CancellationToken ct = default) => throw new NotImplementedException();
+        public override Task CloseStreamAsync(string w, int f, string k, CancellationToken ct = default) => throw new NotImplementedException();
+        public override Task<object?> ReadStreamAsync(string w, string k, int o, CancellationToken ct = default) => throw new NotImplementedException();
+        public override Task<IReadOnlyDictionary<string, IReadOnlyList<object?>>> GetAllStreamEntriesAsync(string w, CancellationToken ct = default) => throw new NotImplementedException();
+    }
+}
