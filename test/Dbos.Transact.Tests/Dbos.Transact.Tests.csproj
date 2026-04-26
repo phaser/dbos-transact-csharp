@@ -16,6 +16,13 @@
     <PackageReference Include="Npgsql" />
   </ItemGroup>
 
+  <!-- Castle.DynamicProxy needs to generate proxy types for internal interfaces in this assembly -->
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
+      <_Parameter1>DynamicProxyGenAssembly2</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\..\src\Dbos.Transact\Dbos.Transact.csproj" />
   </ItemGroup>

@@ -4,6 +4,11 @@
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
   </PropertyGroup>
 
+  <!-- Runtime dependencies -->
+  <ItemGroup>
+    <PackageVersion Include="Castle.Core" Version="5.1.1" />
+  </ItemGroup>
+
   <!-- Test infrastructure -->
   <ItemGroup>
     <PackageVersion Include="coverlet.collector" Version="6.0.4" />
