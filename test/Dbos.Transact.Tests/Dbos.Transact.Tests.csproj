@@ -25,6 +25,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Dbos.Transact\Dbos.Transact.csproj" />
+    <ProjectReference Include="..\..\src\Dbos.Transact.Postgres\Dbos.Transact.Postgres.csproj" />
+    <ProjectReference Include="..\..\src\Dbos.Transact.Sqlite\Dbos.Transact.Sqlite.csproj" />
   </ItemGroup>
 
   <ItemGroup>
