@@ -35,6 +35,13 @@ public sealed class SqliteSystemDatabase : SystemDatabase
         StreamsDao = new SqliteStreamsDao(Factory);
     }
 
+    protected override async Task<DbConnection> OpenConnectionAsync(CancellationToken ct)
+    {
+        var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync(ct).ConfigureAwait(false);
+        return connection;
+    }
+
     public override Task StartAsync(CancellationToken ct = default) => Task.CompletedTask;
 
     public override ValueTask DisposeAsync() => ValueTask.CompletedTask;

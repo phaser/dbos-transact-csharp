@@ -1,6 +1,8 @@
 using System.Data;
+using System.Data.Common;
 using Dbos.Transact.Database;
 using Dbos.Transact.Database.Daos;
+using Dbos.Transact.Json;
 using Dbos.Transact.Workflow;
 using Dbos.Transact.Workflow.Internal;
 
@@ -8,11 +10,13 @@ namespace Dbos.Transact.Tests.Workflow.Internal;
 
 public class WorkflowHandleDbPollTests
 {
+    private static readonly IDbosSerializer NoOpSerializer = new NullSerializer();
+
     [Fact]
     public void WorkflowId_ReturnsConstructedValue()
     {
         var db = new StubSystemDatabase(new ConstantWorkflowDao(null));
-        var handle = new WorkflowHandleDbPoll<int>(db, "wf-xyz");
+        var handle = new WorkflowHandleDbPoll<int>(db, NoOpSerializer, "wf-xyz");
 
         Assert.Equal("wf-xyz", handle.WorkflowId);
     }
@@ -22,7 +26,7 @@ public class WorkflowHandleDbPollTests
     {
         var expected = MakeStatus("wf-1");
         var db = new StubSystemDatabase(new ConstantWorkflowDao(expected));
-        var handle = new WorkflowHandleDbPoll<int>(db, "wf-1");
+        var handle = new WorkflowHandleDbPoll<int>(db, NoOpSerializer, "wf-1");
 
         var result = await handle.GetStatusAsync();
 
@@ -33,7 +37,7 @@ public class WorkflowHandleDbPollTests
     public async Task GetStatusAsync_NonExistentWorkflow_ReturnsNull()
     {
         var db = new StubSystemDatabase(new ConstantWorkflowDao(null));
-        var handle = new WorkflowHandleDbPoll<string>(db, "does-not-exist");
+        var handle = new WorkflowHandleDbPoll<string>(db, NoOpSerializer, "does-not-exist");
 
         var result = await handle.GetStatusAsync();
 
@@ -52,6 +56,15 @@ public class WorkflowHandleDbPollTests
 
     // ── Stubs ─────────────────────────────────────────────────────────────────
 
+    private sealed class NullSerializer : IDbosSerializer
+    {
+        public string Name => "null";
+        public string? Serialize(object? value) => null;
+        public object? Deserialize(string? text) => null;
+        public string? SerializeException(Exception? exception) => null;
+        public Exception? DeserializeException(string? text) => null;
+    }
+
     private sealed class StubSystemDatabase(WorkflowDao workflowDao) : SystemDatabase
     {
         protected override WorkflowDao WorkflowDao { get; } = workflowDao;
@@ -60,6 +73,9 @@ public class WorkflowHandleDbPollTests
         protected override NotificationsDao NotificationsDao { get; } = new NoOpNotificationsDao();
         protected override SchedulesDao SchedulesDao { get; } = new NoOpSchedulesDao();
         protected override StreamsDao StreamsDao { get; } = new NoOpStreamsDao();
+
+        protected override Task<DbConnection> OpenConnectionAsync(CancellationToken ct) =>
+            throw new NotImplementedException();
 
         public override Task StartAsync(CancellationToken ct = default) => Task.CompletedTask;
         public override ValueTask DisposeAsync() => ValueTask.CompletedTask;
@@ -79,7 +95,6 @@ public class WorkflowHandleDbPollTests
         public override Task<IReadOnlyList<WorkflowStatus>> GetPendingWorkflowsAsync(IReadOnlyList<string> e, string? v, CancellationToken ct = default) => throw new NotImplementedException();
         public override Task RecordChildWorkflowAsync(IDbConnection c, string w, int f, string ch, string? s, CancellationToken ct = default) => throw new NotImplementedException();
         public override Task<string?> CheckChildWorkflowAsync(string w, int f, CancellationToken ct = default) => throw new NotImplementedException();
-        public override Task<T> AwaitWorkflowResultAsync<T>(string w, CancellationToken ct = default) => throw new NotImplementedException();
         public override Task CancelWorkflowsAsync(IReadOnlyList<string> w, CancellationToken ct = default) => throw new NotImplementedException();
         public override Task ResumeWorkflowsAsync(IReadOnlyList<string> w, string? q, CancellationToken ct = default) => throw new NotImplementedException();
         public override Task DeleteWorkflowsAsync(IReadOnlyList<string> w, bool d, CancellationToken ct = default) => throw new NotImplementedException();

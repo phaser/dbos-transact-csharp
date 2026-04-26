@@ -1,4 +1,5 @@
 using System.Data;
+using System.Data.Common;
 using Dbos.Transact.Database;
 using Dbos.Transact.Database.Daos;
 using Dbos.Transact.Workflow;
@@ -20,6 +21,9 @@ public sealed class SystemDatabaseTests
         protected override NotificationsDao NotificationsDao { get; } = new NoOpNotificationsDao();
         protected override SchedulesDao SchedulesDao { get; } = new NoOpSchedulesDao();
         protected override StreamsDao StreamsDao { get; } = new NoOpStreamsDao();
+
+        protected override Task<DbConnection> OpenConnectionAsync(CancellationToken ct) =>
+            throw new NotImplementedException();
 
         public override Task StartAsync(CancellationToken ct = default) => Task.CompletedTask;
         public override ValueTask DisposeAsync() => ValueTask.CompletedTask;
@@ -73,7 +77,6 @@ public sealed class SystemDatabaseTests
         public override Task<IReadOnlyList<WorkflowStatus>> GetPendingWorkflowsAsync(IReadOnlyList<string> e, string? v, CancellationToken ct = default) => throw new NotImplementedException();
         public override Task RecordChildWorkflowAsync(IDbConnection c, string w, int f, string ch, string? s, CancellationToken ct = default) => throw new NotImplementedException();
         public override Task<string?> CheckChildWorkflowAsync(string w, int f, CancellationToken ct = default) => throw new NotImplementedException();
-        public override Task<T> AwaitWorkflowResultAsync<T>(string w, CancellationToken ct = default) => throw new NotImplementedException();
         public override Task CancelWorkflowsAsync(IReadOnlyList<string> w, CancellationToken ct = default) => throw new NotImplementedException();
         public override Task ResumeWorkflowsAsync(IReadOnlyList<string> w, string? q, CancellationToken ct = default) => throw new NotImplementedException();
         public override Task DeleteWorkflowsAsync(IReadOnlyList<string> w, bool d, CancellationToken ct = default) => throw new NotImplementedException();
@@ -110,7 +113,6 @@ public sealed class SystemDatabaseTests
         public override Task<IReadOnlyList<WorkflowStatus>> GetPendingWorkflowsAsync(IReadOnlyList<string> e, string? v, CancellationToken ct = default) => throw new NotImplementedException();
         public override Task RecordChildWorkflowAsync(IDbConnection c, string w, int f, string ch, string? s, CancellationToken ct = default) => throw new NotImplementedException();
         public override Task<string?> CheckChildWorkflowAsync(string w, int f, CancellationToken ct = default) => throw new NotImplementedException();
-        public override Task<T> AwaitWorkflowResultAsync<T>(string w, CancellationToken ct = default) => throw new NotImplementedException();
         public override Task CancelWorkflowsAsync(IReadOnlyList<string> w, CancellationToken ct = default) => throw new NotImplementedException();
         public override Task ResumeWorkflowsAsync(IReadOnlyList<string> w, string? q, CancellationToken ct = default) => throw new NotImplementedException();
         public override Task DeleteWorkflowsAsync(IReadOnlyList<string> w, bool d, CancellationToken ct = default) => throw new NotImplementedException();
@@ -127,6 +129,9 @@ public sealed class SystemDatabaseTests
         protected override NotificationsDao NotificationsDao { get; } = new NoOpNotificationsDao();
         protected override SchedulesDao SchedulesDao { get; } = new NoOpSchedulesDao();
         protected override StreamsDao StreamsDao { get; } = new NoOpStreamsDao();
+
+        protected override Task<DbConnection> OpenConnectionAsync(CancellationToken ct) =>
+            throw new NotImplementedException();
 
         public override Task StartAsync(CancellationToken ct = default) => Task.CompletedTask;
         public override ValueTask DisposeAsync() => ValueTask.CompletedTask;

@@ -6,6 +6,7 @@ using Dbos.Transact.Database.Daos;
 using Dbos.Transact.Exceptions;
 using Dbos.Transact.Workflow;
 using Dbos.Transact.Workflow.Internal;
+using Npgsql;
 
 namespace Dbos.Transact.Postgres.Database.Daos;
 
@@ -61,16 +62,16 @@ public sealed class PostgresWorkflowDao : WorkflowDao
 
         public WorkflowStatus ToWorkflowStatus() => new(
             WorkflowId: WorkflowId,
-            Status: Status is not null && Enum.TryParse<WorkflowState>(Status, out var state) ? state : null,
+            Status: Status is not null ? WorkflowStateExtensions.ParseDbStatus(Status) : null,
             WorkflowName: WorkflowName,
             ClassName: ClassName,
             InstanceName: InstanceName,
             AuthenticatedUser: AuthenticatedUser,
             AssumedRole: AssumedRole,
             AuthenticatedRoles: AuthenticatedRoles?.Split(',', StringSplitOptions.RemoveEmptyEntries),
-            Input: null, // Inputs is stored serialized; deserialization is caller's responsibility
+            Input: null,
             Output: Output,
-            Error: null, // Error deserialization is caller's responsibility
+            Error: Error is not null ? new ErrorResult(null, null, Error, Serialization, null) : null,
             ExecutorId: ExecutorId,
             CreatedAt: CreatedAt.HasValue ? DateTimeOffset.FromUnixTimeMilliseconds(CreatedAt.Value) : null,
             UpdatedAt: UpdatedAt.HasValue ? DateTimeOffset.FromUnixTimeMilliseconds(UpdatedAt.Value) : null,
@@ -283,11 +284,192 @@ public sealed class PostgresWorkflowDao : WorkflowDao
             new CommandDefinition(sql, new { WorkflowIds = workflowIds.ToArray(), QueueName = queueName }, cancellationToken: ct));
     }
 
-    // ── Stubbed operations (implemented in future waves) ─────────────────────
+    // ── InitWorkflowStatus ────────────────────────────────────────────────────
 
-    public override Task<WorkflowInitResult> InitWorkflowStatusAsync(
-        WorkflowStatusInternal initStatus, int maxRetries, bool isRecoveryRequest, bool isDequeuedRequest, CancellationToken ct = default) =>
-        throw new NotImplementedException("DBOS-20: InitWorkflowStatus requires full transaction support");
+    private sealed class InitResultRow
+    {
+        public int RecoveryAttempts { get; set; }
+        public string? Status { get; set; }
+        public string? WorkflowName { get; set; }
+        public string? ClassName { get; set; }
+        public string? InstanceName { get; set; }
+        public string? QueueName { get; set; }
+        public long? DeadlineEpochMs { get; set; }
+        public string? OwnerXid { get; set; }
+        public string? Serialization { get; set; }
+    }
+
+    public override async Task<WorkflowInitResult> InitWorkflowStatusAsync(
+        WorkflowStatusInternal initStatus, int maxRetries, bool isRecoveryRequest, bool isDequeuedRequest, CancellationToken ct = default)
+    {
+        var ownerXid = Guid.NewGuid().ToString();
+        var state = initStatus.QueueName is null
+            ? WorkflowState.Pending
+            : initStatus.Delay is null ? WorkflowState.Enqueued : WorkflowState.Delayed;
+        var recoveryAttempts = state is WorkflowState.Enqueued or WorkflowState.Delayed ? 0 : 1;
+        var incrementAttempts = isRecoveryRequest || isDequeuedRequest ? 1 : 0;
+        var authenticatedRolesJson = initStatus.AuthenticatedRoles is not null
+            ? System.Text.Json.JsonSerializer.Serialize(initStatus.AuthenticatedRoles)
+            : null;
+        var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        var delayUntilEpochMs = initStatus.DelayMs.HasValue ? now + initStatus.DelayMs.Value : (long?)null;
+
+        var sql = $"""
+            INSERT INTO {_schemaPrefix}workflow_status (
+                workflow_uuid, status, inputs,
+                name, class_name, config_name,
+                queue_name, deduplication_id, priority, queue_partition_key, delay_until_epoch_ms,
+                authenticated_user, assumed_role, authenticated_roles,
+                executor_id, application_version, application_id,
+                created_at, updated_at, recovery_attempts,
+                workflow_timeout_ms, workflow_deadline_epoch_ms,
+                parent_workflow_id, owner_xid, serialization
+            ) VALUES (
+                @WorkflowId, @Status, @Inputs,
+                @WorkflowName, @ClassName, @InstanceName,
+                @QueueName, @DeduplicationId, @Priority, @QueuePartitionKey, @DelayUntilEpochMs,
+                @AuthenticatedUser, @AssumedRole, @AuthenticatedRoles,
+                @ExecutorId, @AppVersion, @AppId,
+                @Now, @Now, @RecoveryAttempts,
+                @TimeoutMs, @DeadlineEpochMs,
+                @ParentWorkflowId, @OwnerXid, @Serialization
+            )
+            ON CONFLICT (workflow_uuid) DO UPDATE SET
+                recovery_attempts = CASE
+                    WHEN workflow_status.status NOT IN ('ENQUEUED', 'DELAYED')
+                    THEN workflow_status.recovery_attempts + @IncrementAttempts
+                    ELSE workflow_status.recovery_attempts
+                END,
+                updated_at = @Now,
+                executor_id = CASE
+                    WHEN workflow_status.status NOT IN ('ENQUEUED', 'DELAYED')
+                    THEN @ExecutorId
+                    ELSE workflow_status.executor_id
+                END
+            RETURNING
+                recovery_attempts AS RecoveryAttempts,
+                status AS Status,
+                name AS WorkflowName,
+                class_name AS ClassName,
+                config_name AS InstanceName,
+                queue_name AS QueueName,
+                workflow_deadline_epoch_ms AS DeadlineEpochMs,
+                owner_xid AS OwnerXid,
+                serialization AS Serialization
+            """;
+
+        var p = new
+        {
+            WorkflowId = initStatus.WorkflowId,
+            Status = state.ToDbString(),
+            Inputs = initStatus.Inputs,
+            WorkflowName = initStatus.WorkflowName,
+            ClassName = initStatus.ClassName,
+            InstanceName = initStatus.InstanceName,
+            QueueName = initStatus.QueueName,
+            DeduplicationId = initStatus.DeduplicationId,
+            Priority = initStatus.Priority ?? 0,
+            QueuePartitionKey = initStatus.QueuePartitionKey,
+            DelayUntilEpochMs = delayUntilEpochMs,
+            AuthenticatedUser = initStatus.AuthenticatedUser,
+            AssumedRole = initStatus.AssumedRole,
+            AuthenticatedRoles = authenticatedRolesJson,
+            ExecutorId = initStatus.ExecutorId,
+            AppVersion = initStatus.AppVersion,
+            AppId = initStatus.AppId,
+            Now = now,
+            RecoveryAttempts = recoveryAttempts,
+            TimeoutMs = initStatus.TimeoutMs,
+            DeadlineEpochMs = initStatus.DeadlineEpochMs,
+            ParentWorkflowId = initStatus.ParentWorkflowId,
+            OwnerXid = ownerXid,
+            Serialization = initStatus.Serialization,
+            IncrementAttempts = incrementAttempts,
+        };
+
+        await using var connection = _connectionFactory();
+        await connection.OpenAsync(ct);
+        await using var tx = await connection.BeginTransactionAsync(System.Data.IsolationLevel.ReadCommitted, ct);
+
+        WorkflowInitResult? result = null;
+        Exception? toThrow = null;
+        bool finalised = false;
+
+        try
+        {
+            var row = await connection.QuerySingleOrDefaultAsync<InitResultRow>(
+                new CommandDefinition(sql, p, transaction: tx, cancellationToken: ct));
+
+            if (row is null)
+                throw new InvalidOperationException($"InitWorkflowStatus returned no row for workflow {initStatus.WorkflowId}");
+
+            if (row.WorkflowName != initStatus.WorkflowName)
+                throw new DbosConflictingWorkflowException(initStatus.WorkflowId,
+                    $"Workflow already exists with function name '{row.WorkflowName}' but '{initStatus.WorkflowName}' was requested.");
+            if (row.ClassName != initStatus.ClassName)
+                throw new DbosConflictingWorkflowException(initStatus.WorkflowId,
+                    $"Workflow already exists with class name '{row.ClassName}' but '{initStatus.ClassName}' was requested.");
+            if ((row.InstanceName ?? string.Empty) != (initStatus.InstanceName ?? string.Empty))
+                throw new DbosConflictingWorkflowException(initStatus.WorkflowId,
+                    $"Workflow already exists with config name '{row.InstanceName}' but '{initStatus.InstanceName}' was requested.");
+
+            var workflowState = WorkflowStateExtensions.ParseDbStatus(row.Status!);
+
+            if (row.OwnerXid != ownerXid && !isRecoveryRequest && !isDequeuedRequest)
+            {
+                if (workflowState == WorkflowState.MaxRecoveryAttemptsExceeded)
+                {
+                    await tx.RollbackAsync(ct);
+                    finalised = true;
+                    toThrow = new DbosMaxRecoveryAttemptsExceededException(initStatus.WorkflowId, maxRetries);
+                }
+                else
+                {
+                    await tx.RollbackAsync(ct);
+                    finalised = true;
+                    result = new WorkflowInitResult(workflowState, row.DeadlineEpochMs, false, row.Serialization);
+                }
+            }
+            else if (row.RecoveryAttempts > maxRetries + 1)
+            {
+                var markSql = $"""
+                    UPDATE {_schemaPrefix}workflow_status
+                    SET status = @MaxStatus, deduplication_id = NULL, started_at_epoch_ms = NULL, queue_name = NULL
+                    WHERE workflow_uuid = @WorkflowId AND status = 'PENDING'
+                    """;
+                await connection.ExecuteAsync(new CommandDefinition(markSql,
+                    new { MaxStatus = WorkflowState.MaxRecoveryAttemptsExceeded.ToDbString(), WorkflowId = initStatus.WorkflowId },
+                    transaction: tx, cancellationToken: ct));
+                await tx.CommitAsync(ct);
+                finalised = true;
+                toThrow = new DbosMaxRecoveryAttemptsExceededException(initStatus.WorkflowId, maxRetries);
+            }
+            else
+            {
+                await tx.CommitAsync(ct);
+                finalised = true;
+                result = new WorkflowInitResult(workflowState, row.DeadlineEpochMs, true, row.Serialization);
+            }
+        }
+        catch (NpgsqlException npgsql) when (npgsql.SqlState == "23505")
+        {
+            if (!finalised) { try { await tx.RollbackAsync(ct); } catch { /* ignore */ } }
+            throw new DbosQueueDuplicatedException(
+                initStatus.WorkflowId,
+                initStatus.QueueName ?? string.Empty,
+                initStatus.DeduplicationId ?? string.Empty);
+        }
+        catch
+        {
+            if (!finalised) { try { await tx.RollbackAsync(ct); } catch { /* ignore */ } }
+            throw;
+        }
+
+        if (toThrow is not null) throw toThrow;
+        return result!;
+    }
+
+    // ── Stubbed operations ────────────────────────────────────────────────────
 
     public override Task<IReadOnlyList<WorkflowAggregateRow>> GetWorkflowAggregatesAsync(GetWorkflowAggregatesInput input, CancellationToken ct = default) =>
         throw new NotImplementedException();
@@ -296,9 +478,6 @@ public sealed class PostgresWorkflowDao : WorkflowDao
         throw new NotImplementedException();
 
     public override Task<string?> CheckChildWorkflowAsync(string workflowId, int functionId, CancellationToken ct = default) =>
-        throw new NotImplementedException();
-
-    public override Task<T> AwaitWorkflowResultAsync<T>(string workflowId, CancellationToken ct = default) =>
         throw new NotImplementedException();
 
     public override Task DeleteWorkflowsAsync(IReadOnlyList<string> workflowIds, bool deleteChildren, CancellationToken ct = default) =>
