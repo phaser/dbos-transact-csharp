@@ -1,6 +1,7 @@
 using System.Data.Common;
 using Dbos.Transact.Database;
 using Dbos.Transact.Database.Daos;
+using Dbos.Transact.Json;
 using Dbos.Transact.Postgres.Database.Daos;
 using Npgsql;
 
@@ -22,13 +23,14 @@ public sealed class PostgresSystemDatabase : SystemDatabase
     protected override SchedulesDao SchedulesDao { get; }
     protected override StreamsDao StreamsDao { get; }
 
-    public PostgresSystemDatabase(string connectionString, string schema = Constants.DbSchema)
-        : this(NpgsqlDataSource.Create(connectionString), schema, ownsDataSource: true) { }
+    public PostgresSystemDatabase(string connectionString, string schema = Constants.DbSchema, IDbosSerializer? serializer = null)
+        : this(NpgsqlDataSource.Create(connectionString), schema, ownsDataSource: true, serializer) { }
 
-    public PostgresSystemDatabase(NpgsqlDataSource dataSource, string schema = Constants.DbSchema, bool ownsDataSource = false)
+    public PostgresSystemDatabase(NpgsqlDataSource dataSource, string schema = Constants.DbSchema, bool ownsDataSource = false, IDbosSerializer? serializer = null)
     {
         _dataSource = dataSource;
         _ownsDataSource = ownsDataSource;
+        var resolvedSerializer = serializer ?? DbosJsonSerializer.Instance;
 
         DbConnection Factory() => _dataSource.CreateConnection();
 
@@ -36,7 +38,7 @@ public sealed class PostgresSystemDatabase : SystemDatabase
         StepsDao = new PostgresStepsDao(Factory, schema);
         QueuesDao = new PostgresQueuesDao(Factory, schema);
         NotificationsDao = new PostgresNotificationsDao(Factory, schema);
-        SchedulesDao = new PostgresSchedulesDao(Factory, schema);
+        SchedulesDao = new PostgresSchedulesDao(Factory, schema, resolvedSerializer);
         StreamsDao = new PostgresStreamsDao(Factory, schema);
     }
 
