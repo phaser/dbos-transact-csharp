@@ -13,7 +13,7 @@ Master catalog of all wiki pages. Every page in the wiki must have an entry here
 | Page | Tags | Confidence | Updated |
 |------|------|------------|---------|
 | [[concepts/durable-workflow]] | core, workflows, persistence, foundational | high | 2026-04-24 |
-| [[concepts/method-interception]] | core, interception, decided-v1 | high | 2026-04-24 |
+| [[concepts/method-interception]] | core, interception, decided-v1 | high | 2026-04-27 |
 | [[concepts/portable-serializer]] | core, serialization, cross-runtime-interop | high | 2026-04-24 |
 | [[concepts/dialect-abstraction]] | core, persistence, dialect-postgres, dialect-sqlite | high | 2026-04-24 |
 | [[concepts/sqlite-production-target]] | dialect-sqlite, persistence, deployment | high | 2026-04-24 |
