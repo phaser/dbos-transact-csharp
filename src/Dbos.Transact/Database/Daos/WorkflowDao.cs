@@ -41,8 +41,6 @@ public abstract class WorkflowDao
 
     public abstract Task<string?> CheckChildWorkflowAsync(string workflowId, int functionId, CancellationToken ct = default);
 
-    public abstract Task<T> AwaitWorkflowResultAsync<T>(string workflowId, CancellationToken ct = default);
-
     public abstract Task CancelWorkflowsAsync(IReadOnlyList<string> workflowIds, CancellationToken ct = default);
 
     public abstract Task ResumeWorkflowsAsync(IReadOnlyList<string> workflowIds, string? queueName, CancellationToken ct = default);

@@ -1,4 +1,7 @@
+using System.Data.Common;
 using Dbos.Transact.Database.Daos;
+using Dbos.Transact.Exceptions;
+using Dbos.Transact.Json;
 using Dbos.Transact.Workflow;
 using Dbos.Transact.Workflow.Internal;
 
@@ -15,12 +18,18 @@ public abstract class SystemDatabase : IAsyncDisposable
     private const int MaxRetries = 3;
     private const long BaseRetryDelayMs = 100;
 
+    // Polling interval for AwaitWorkflowResultAsync — matches Java's getResultPollingIntervalMs.
+    private static readonly TimeSpan AwaitPollInterval = TimeSpan.FromMilliseconds(1000);
+
     protected abstract WorkflowDao WorkflowDao { get; }
     protected abstract StepsDao StepsDao { get; }
     protected abstract QueuesDao QueuesDao { get; }
     protected abstract NotificationsDao NotificationsDao { get; }
     protected abstract SchedulesDao SchedulesDao { get; }
     protected abstract StreamsDao StreamsDao { get; }
+
+    /// <summary>Opens and returns a fresh connection to the underlying database.</summary>
+    protected abstract Task<DbConnection> OpenConnectionAsync(CancellationToken ct);
 
     public abstract Task StartAsync(CancellationToken ct = default);
     public abstract ValueTask DisposeAsync();
@@ -58,8 +67,37 @@ public abstract class SystemDatabase : IAsyncDisposable
     public Task<IReadOnlyList<WorkflowStatus>> GetPendingWorkflowsAsync(IReadOnlyList<string> executorIds, string? appVersion, CancellationToken ct = default) =>
         DbRetryAsync(c => WorkflowDao.GetPendingWorkflowsAsync(executorIds, appVersion, c), ct);
 
-    public Task<T> AwaitWorkflowResultAsync<T>(string workflowId, CancellationToken ct = default) =>
-        DbRetryAsync(c => WorkflowDao.AwaitWorkflowResultAsync<T>(workflowId, c), ct);
+    /// <summary>
+    /// Polls the database until the workflow completes, then deserializes and returns the result.
+    /// Port of Java's <c>WorkflowDAO.awaitWorkflowResult</c>.
+    /// </summary>
+    public async Task<T> AwaitWorkflowResultAsync<T>(string workflowId, IDbosSerializer serializer, CancellationToken ct = default)
+    {
+        while (true)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            var status = await GetWorkflowStatusAsync(workflowId, ct).ConfigureAwait(false);
+
+            if (status is not null)
+            {
+                switch (status.Status)
+                {
+                    case WorkflowState.Success:
+                        return (T)serializer.Deserialize(status.Output as string)!;
+
+                    case WorkflowState.Error:
+                        var ex = serializer.DeserializeException(status.Error?.SerializedError);
+                        throw ex ?? new InvalidOperationException($"Workflow {workflowId} failed with no error payload.");
+
+                    case WorkflowState.Cancelled:
+                        throw new DbosAwaitedWorkflowCancelledException(workflowId);
+                }
+            }
+
+            await Task.Delay(AwaitPollInterval, ct).ConfigureAwait(false);
+        }
+    }
 
     public Task CancelWorkflowsAsync(IReadOnlyList<string> workflowIds, CancellationToken ct = default) =>
         DbRetryAsync(c => WorkflowDao.CancelWorkflowsAsync(workflowIds, c), ct);
@@ -81,6 +119,48 @@ public abstract class SystemDatabase : IAsyncDisposable
 
     public Task SleepAsync(string workflowId, int functionId, TimeSpan duration, CancellationToken ct = default) =>
         DbRetryAsync(c => StepsDao.SleepAsync(workflowId, functionId, duration, c), ct);
+
+    /// <summary>
+    /// Opens a connection and checks whether a step was already recorded, returning its prior result
+    /// if so, or an empty <see cref="StepResult"/> if the step has not yet run.
+    /// </summary>
+    public async Task<StepResult> CheckStepExecutionAsync(
+        string workflowId, int functionId, string functionName, CancellationToken ct = default)
+    {
+        for (int attempt = 1; ; attempt++)
+        {
+            try
+            {
+                await using var connection = await OpenConnectionAsync(ct).ConfigureAwait(false);
+                return await StepsDao.CheckStepExecutionTxnAsync(connection, workflowId, functionId, functionName, ct).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (attempt < MaxRetries && IsRetryable(ex))
+            {
+                long delayMs = (long)(BaseRetryDelayMs * Math.Pow(2, attempt - 1));
+                await Task.Delay(TimeSpan.FromMilliseconds(delayMs), ct).ConfigureAwait(false);
+            }
+        }
+    }
+
+    /// <summary>Opens a connection and durably records a completed step result.</summary>
+    public async Task RecordStepResultAsync(StepResult result, long startTimeEpochMs, CancellationToken ct = default)
+    {
+        var endTimeEpochMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        for (int attempt = 1; ; attempt++)
+        {
+            try
+            {
+                await using var connection = await OpenConnectionAsync(ct).ConfigureAwait(false);
+                await StepsDao.RecordStepResultTxnAsync(connection, result, startTimeEpochMs, endTimeEpochMs, ct).ConfigureAwait(false);
+                return;
+            }
+            catch (Exception ex) when (attempt < MaxRetries && IsRetryable(ex))
+            {
+                long delayMs = (long)(BaseRetryDelayMs * Math.Pow(2, attempt - 1));
+                await Task.Delay(TimeSpan.FromMilliseconds(delayMs), ct).ConfigureAwait(false);
+            }
+        }
+    }
 
     // ── Queues ────────────────────────────────────────────────────────────
 

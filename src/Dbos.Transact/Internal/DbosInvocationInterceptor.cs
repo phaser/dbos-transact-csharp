@@ -37,10 +37,17 @@ public sealed class DbosInvocationInterceptor : IInterceptor
 
     public void Intercept(IInvocation invocation)
     {
-        // Look up the method on the concrete target type so attribute lookups work.
+        // Attributes may live on the interface method (invocation.Method) or the concrete
+        // method on the target. Check both; prefer the concrete method if it has the attribute,
+        // otherwise fall back to the interface method so interface-only attributes are found.
         var paramTypes = invocation.Method.GetParameters().Select(p => p.ParameterType).ToArray();
-        var method = _target.GetType().GetMethod(invocation.Method.Name, paramTypes)
-                     ?? invocation.Method;
+        var concreteMethod = _target.GetType().GetMethod(invocation.Method.Name, paramTypes);
+
+        bool concreteHasAttr = concreteMethod is not null &&
+            (concreteMethod.IsDefined(typeof(WorkflowAttribute), inherit: true)
+             || concreteMethod.IsDefined(typeof(StepAttribute), inherit: true));
+
+        var method = concreteHasAttr ? concreteMethod! : invocation.Method;
 
         var isWorkflow = method.IsDefined(typeof(WorkflowAttribute), inherit: true);
         var isStep = method.IsDefined(typeof(StepAttribute), inherit: true);

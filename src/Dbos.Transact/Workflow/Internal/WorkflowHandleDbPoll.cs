@@ -1,4 +1,5 @@
 using Dbos.Transact.Database;
+using Dbos.Transact.Json;
 
 namespace Dbos.Transact.Workflow.Internal;
 
@@ -9,17 +10,19 @@ namespace Dbos.Transact.Workflow.Internal;
 public sealed class WorkflowHandleDbPoll<T> : WorkflowHandle<T>
 {
     private readonly SystemDatabase _db;
+    private readonly IDbosSerializer _serializer;
 
-    public WorkflowHandleDbPoll(SystemDatabase db, string workflowId)
+    public WorkflowHandleDbPoll(SystemDatabase db, IDbosSerializer serializer, string workflowId)
     {
         _db = db;
+        _serializer = serializer;
         WorkflowId = workflowId;
     }
 
     public override string WorkflowId { get; }
 
     public override Task<T> GetResultAsync(CancellationToken ct = default) =>
-        _db.AwaitWorkflowResultAsync<T>(WorkflowId, ct);
+        _db.AwaitWorkflowResultAsync<T>(WorkflowId, _serializer, ct);
 
     public override Task<WorkflowStatus?> GetStatusAsync(CancellationToken ct = default) =>
         _db.GetWorkflowStatusAsync(WorkflowId, ct);

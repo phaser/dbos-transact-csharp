@@ -58,7 +58,7 @@ public sealed class SqliteWorkflowDao : WorkflowDao
 
         public WorkflowStatus ToWorkflowStatus() => new(
             WorkflowId: WorkflowId,
-            Status: Status is not null && Enum.TryParse<WorkflowState>(Status, out var state) ? state : null,
+            Status: Status is not null ? WorkflowStateExtensions.ParseDbStatus(Status) : null,
             WorkflowName: WorkflowName,
             ClassName: ClassName,
             InstanceName: InstanceName,
@@ -67,7 +67,7 @@ public sealed class SqliteWorkflowDao : WorkflowDao
             AuthenticatedRoles: AuthenticatedRoles?.Split(',', StringSplitOptions.RemoveEmptyEntries),
             Input: null,
             Output: Output,
-            Error: null,
+            Error: Error is not null ? new ErrorResult(null, null, Error, Serialization, null) : null,
             ExecutorId: ExecutorId,
             CreatedAt: CreatedAt.HasValue ? DateTimeOffset.FromUnixTimeMilliseconds(CreatedAt.Value) : null,
             UpdatedAt: UpdatedAt.HasValue ? DateTimeOffset.FromUnixTimeMilliseconds(UpdatedAt.Value) : null,
@@ -278,26 +278,216 @@ public sealed class SqliteWorkflowDao : WorkflowDao
         await connection.ExecuteAsync(new CommandDefinition(sql, parameters, cancellationToken: ct));
     }
 
+    // ── InitWorkflowStatus ────────────────────────────────────────────────────
+
+    private sealed class InitResultRow
+    {
+        public int RecoveryAttempts { get; set; }
+        public string? Status { get; set; }
+        public string? WorkflowName { get; set; }
+        public string? ClassName { get; set; }
+        public string? InstanceName { get; set; }
+        public string? QueueName { get; set; }
+        public long? DeadlineEpochMs { get; set; }
+        public string? OwnerXid { get; set; }
+        public string? Serialization { get; set; }
+    }
+
+    private const string InitResultColumns = """
+        recovery_attempts AS RecoveryAttempts,
+        status AS Status,
+        name AS WorkflowName,
+        class_name AS ClassName,
+        config_name AS InstanceName,
+        queue_name AS QueueName,
+        workflow_deadline_epoch_ms AS DeadlineEpochMs,
+        owner_xid AS OwnerXid,
+        serialization AS Serialization
+        """;
+
+    public override async Task<WorkflowInitResult> InitWorkflowStatusAsync(
+        WorkflowStatusInternal initStatus, int maxRetries, bool isRecoveryRequest, bool isDequeuedRequest, CancellationToken ct = default)
+    {
+        var ownerXid = Guid.NewGuid().ToString();
+        var state = initStatus.QueueName is null
+            ? WorkflowState.Pending
+            : initStatus.Delay is null ? WorkflowState.Enqueued : WorkflowState.Delayed;
+        var recoveryAttempts = state is WorkflowState.Enqueued or WorkflowState.Delayed ? 0 : 1;
+        var incrementAttempts = isRecoveryRequest || isDequeuedRequest;
+        var authenticatedRolesJson = initStatus.AuthenticatedRoles is not null
+            ? System.Text.Json.JsonSerializer.Serialize(initStatus.AuthenticatedRoles)
+            : null;
+        var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        var delayUntilEpochMs = initStatus.DelayMs.HasValue ? now + initStatus.DelayMs.Value : (long?)null;
+
+        await using var connection = _connectionFactory();
+        await connection.OpenAsync(ct);
+        // BEGIN IMMEDIATE acquires a write lock upfront, preventing concurrent insert races.
+        using var tx = connection.BeginTransaction(System.Data.IsolationLevel.Serializable);
+
+        WorkflowInitResult? result = null;
+        Exception? toThrow = null;
+        bool finalised = false;
+
+        try
+        {
+            const string insertSql = """
+                INSERT OR IGNORE INTO workflow_status (
+                    workflow_uuid, status, inputs,
+                    name, class_name, config_name,
+                    queue_name, deduplication_id, priority, queue_partition_key, delay_until_epoch_ms,
+                    authenticated_user, assumed_role, authenticated_roles,
+                    executor_id, application_version, application_id,
+                    created_at, updated_at, recovery_attempts,
+                    workflow_timeout_ms, workflow_deadline_epoch_ms,
+                    parent_workflow_id, owner_xid, serialization
+                ) VALUES (
+                    @WorkflowId, @Status, @Inputs,
+                    @WorkflowName, @ClassName, @InstanceName,
+                    @QueueName, @DeduplicationId, @Priority, @QueuePartitionKey, @DelayUntilEpochMs,
+                    @AuthenticatedUser, @AssumedRole, @AuthenticatedRoles,
+                    @ExecutorId, @AppVersion, @AppId,
+                    @Now, @Now, @RecoveryAttempts,
+                    @TimeoutMs, @DeadlineEpochMs,
+                    @ParentWorkflowId, @OwnerXid, @Serialization
+                )
+                """;
+
+            await connection.ExecuteAsync(new CommandDefinition(insertSql, new
+            {
+                WorkflowId = initStatus.WorkflowId,
+                Status = state.ToDbString(),
+                Inputs = initStatus.Inputs,
+                WorkflowName = initStatus.WorkflowName,
+                ClassName = initStatus.ClassName,
+                InstanceName = initStatus.InstanceName,
+                QueueName = initStatus.QueueName,
+                DeduplicationId = initStatus.DeduplicationId,
+                Priority = initStatus.Priority ?? 0,
+                QueuePartitionKey = initStatus.QueuePartitionKey,
+                DelayUntilEpochMs = delayUntilEpochMs,
+                AuthenticatedUser = initStatus.AuthenticatedUser,
+                AssumedRole = initStatus.AssumedRole,
+                AuthenticatedRoles = authenticatedRolesJson,
+                ExecutorId = initStatus.ExecutorId,
+                AppVersion = initStatus.AppVersion,
+                AppId = initStatus.AppId,
+                Now = now,
+                RecoveryAttempts = recoveryAttempts,
+                TimeoutMs = initStatus.TimeoutMs,
+                DeadlineEpochMs = initStatus.DeadlineEpochMs,
+                ParentWorkflowId = initStatus.ParentWorkflowId,
+                OwnerXid = ownerXid,
+                Serialization = initStatus.Serialization,
+            }, transaction: tx, cancellationToken: ct));
+
+            var selectSql = $"SELECT {InitResultColumns} FROM workflow_status WHERE workflow_uuid = @WorkflowId";
+            var row = await connection.QuerySingleOrDefaultAsync<InitResultRow>(
+                new CommandDefinition(selectSql, new { WorkflowId = initStatus.WorkflowId }, transaction: tx, cancellationToken: ct));
+
+            // INSERT OR IGNORE silently swallows all constraint violations including the dedup unique index.
+            // If the row is missing after INSERT, it was a dedup violation on (queue_name, deduplication_id).
+            if (row is null)
+            {
+                tx.Rollback();
+                finalised = true;
+                throw new DbosQueueDuplicatedException(
+                    initStatus.WorkflowId,
+                    initStatus.QueueName ?? string.Empty,
+                    initStatus.DeduplicationId ?? string.Empty);
+            }
+
+            // If this is an existing row owned by someone else and we're here for recovery/dequeue, increment the attempt counter.
+            if (row.OwnerXid != ownerXid && incrementAttempts)
+            {
+                const string updateSql = """
+                    UPDATE workflow_status
+                    SET recovery_attempts = CASE
+                            WHEN status NOT IN ('ENQUEUED', 'DELAYED') THEN recovery_attempts + 1
+                            ELSE recovery_attempts
+                        END,
+                        updated_at = @Now,
+                        executor_id = CASE
+                            WHEN status NOT IN ('ENQUEUED', 'DELAYED') THEN @ExecutorId
+                            ELSE executor_id
+                        END
+                    WHERE workflow_uuid = @WorkflowId
+                    """;
+                await connection.ExecuteAsync(new CommandDefinition(updateSql,
+                    new { Now = now, ExecutorId = initStatus.ExecutorId, WorkflowId = initStatus.WorkflowId },
+                    transaction: tx, cancellationToken: ct));
+
+                row = await connection.QuerySingleOrDefaultAsync<InitResultRow>(
+                    new CommandDefinition(selectSql, new { WorkflowId = initStatus.WorkflowId }, transaction: tx, cancellationToken: ct))
+                    ?? throw new InvalidOperationException($"Workflow row disappeared during update: {initStatus.WorkflowId}");
+            }
+
+            if (row.WorkflowName != initStatus.WorkflowName)
+                throw new DbosConflictingWorkflowException(initStatus.WorkflowId,
+                    $"Workflow already exists with function name '{row.WorkflowName}' but '{initStatus.WorkflowName}' was requested.");
+            if (row.ClassName != initStatus.ClassName)
+                throw new DbosConflictingWorkflowException(initStatus.WorkflowId,
+                    $"Workflow already exists with class name '{row.ClassName}' but '{initStatus.ClassName}' was requested.");
+            if ((row.InstanceName ?? string.Empty) != (initStatus.InstanceName ?? string.Empty))
+                throw new DbosConflictingWorkflowException(initStatus.WorkflowId,
+                    $"Workflow already exists with config name '{row.InstanceName}' but '{initStatus.InstanceName}' was requested.");
+
+            var workflowState = WorkflowStateExtensions.ParseDbStatus(row.Status!);
+
+            if (row.OwnerXid != ownerXid && !isRecoveryRequest && !isDequeuedRequest)
+            {
+                tx.Rollback();
+                finalised = true;
+                if (workflowState == WorkflowState.MaxRecoveryAttemptsExceeded)
+                    toThrow = new DbosMaxRecoveryAttemptsExceededException(initStatus.WorkflowId, maxRetries);
+                else
+                    result = new WorkflowInitResult(workflowState, row.DeadlineEpochMs, false, row.Serialization);
+            }
+            else if (row.RecoveryAttempts > maxRetries + 1)
+            {
+                const string markSql = """
+                    UPDATE workflow_status
+                    SET status = @MaxStatus, deduplication_id = NULL, started_at_epoch_ms = NULL, queue_name = NULL
+                    WHERE workflow_uuid = @WorkflowId AND status = 'PENDING'
+                    """;
+                await connection.ExecuteAsync(new CommandDefinition(markSql,
+                    new { MaxStatus = WorkflowState.MaxRecoveryAttemptsExceeded.ToDbString(), WorkflowId = initStatus.WorkflowId },
+                    transaction: tx, cancellationToken: ct));
+                tx.Commit();
+                finalised = true;
+                toThrow = new DbosMaxRecoveryAttemptsExceededException(initStatus.WorkflowId, maxRetries);
+            }
+            else
+            {
+                tx.Commit();
+                finalised = true;
+                result = new WorkflowInitResult(workflowState, row.DeadlineEpochMs, true, row.Serialization);
+            }
+        }
+        catch
+        {
+            if (!finalised) { try { tx.Rollback(); } catch { /* ignore */ } }
+            throw;
+        }
+
+        if (toThrow is not null) throw toThrow;
+        return result!;
+    }
+
     // ── Stubbed ───────────────────────────────────────────────────────────────
 
-    public override Task<WorkflowInitResult> InitWorkflowStatusAsync(WorkflowStatusInternal initStatus, int maxRetries, bool isRecoveryRequest, bool isDequeuedRequest, CancellationToken ct = default) =>
-        throw new NotImplementedException("DBOS-20");
-
     public override Task<IReadOnlyList<WorkflowAggregateRow>> GetWorkflowAggregatesAsync(GetWorkflowAggregatesInput input, CancellationToken ct = default) =>
-        throw new NotImplementedException("DBOS-20");
+        throw new NotImplementedException();
 
     public override Task RecordChildWorkflowAsync(IDbConnection connection, string workflowId, int functionId, string childWorkflowId, string? serialization, CancellationToken ct = default) =>
-        throw new NotImplementedException("DBOS-20");
+        throw new NotImplementedException();
 
     public override Task<string?> CheckChildWorkflowAsync(string workflowId, int functionId, CancellationToken ct = default) =>
-        throw new NotImplementedException("DBOS-20");
-
-    public override Task<T> AwaitWorkflowResultAsync<T>(string workflowId, CancellationToken ct = default) =>
-        throw new NotImplementedException("DBOS-20");
+        throw new NotImplementedException();
 
     public override Task DeleteWorkflowsAsync(IReadOnlyList<string> workflowIds, bool deleteChildren, CancellationToken ct = default) =>
-        throw new NotImplementedException("DBOS-20");
+        throw new NotImplementedException();
 
     public override Task<string> ForkWorkflowAsync(string originalWorkflowId, int startStep, ForkOptions options, CancellationToken ct = default) =>
-        throw new NotImplementedException("DBOS-20");
+        throw new NotImplementedException();
 }

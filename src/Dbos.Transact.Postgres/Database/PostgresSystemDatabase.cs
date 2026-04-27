@@ -40,6 +40,13 @@ public sealed class PostgresSystemDatabase : SystemDatabase
         StreamsDao = new PostgresStreamsDao(Factory, schema);
     }
 
+    protected override async Task<DbConnection> OpenConnectionAsync(CancellationToken ct)
+    {
+        var connection = _dataSource.CreateConnection();
+        await connection.OpenAsync(ct).ConfigureAwait(false);
+        return connection;
+    }
+
     public override Task StartAsync(CancellationToken ct = default) => Task.CompletedTask;
 
     public override async ValueTask DisposeAsync()
