@@ -24,6 +24,7 @@ public sealed class DbosExecutor : IAsyncDisposable
     private readonly string? _appVersion;
     private readonly string? _appId;
     private readonly ConcurrentDictionary<string, bool> _workflowsInProgress = new();
+    private readonly ConcurrentDictionary<string, RegisteredWorkflow> _workflowMap = new();
 
     public DbosExecutor(
         SystemDatabase db,
@@ -43,6 +44,10 @@ public sealed class DbosExecutor : IAsyncDisposable
 
     // ── Public API ────────────────────────────────────────────────────────────
 
+    /// <summary>Registers a workflow so it can be found by <see cref="ExecuteWorkflowByIdAsync"/>.</summary>
+    public void RegisterWorkflow(RegisteredWorkflow workflow) =>
+        _workflowMap.TryAdd(workflow.FqName, workflow);
+
     /// <summary>
     /// Durably starts a workflow: writes the DB record, then executes the workflow body
     /// on a background task. Returns a handle that resolves to the workflow result.
@@ -53,6 +58,7 @@ public sealed class DbosExecutor : IAsyncDisposable
         object?[]? args = null,
         StartWorkflowOptions? options = null,
         WorkflowInfo? parent = null,
+        bool isDequeuedRequest = false,
         CancellationToken ct = default)
     {
         var opts = options ?? new StartWorkflowOptions();
@@ -93,8 +99,12 @@ public sealed class DbosExecutor : IAsyncDisposable
         var maxRetries = workflow.MaxRecoveryAttempts > 0 ? workflow.MaxRecoveryAttempts : int.MaxValue;
 
         var initResult = await _db.InitWorkflowStatusAsync(
-            initStatus, maxRetries, isRecoveryRequest: false, isDequeuedRequest: false, ct)
+            initStatus, maxRetries, isRecoveryRequest: false, isDequeuedRequest: isDequeuedRequest, ct)
             .ConfigureAwait(false);
+
+        // Queued workflows wait for the QueueService to dequeue them; don't run the body here.
+        if (opts.QueueName is not null)
+            return new WorkflowHandleDbPoll<T>(_db, _serializer, workflowId);
 
         if (!initResult.ShouldExecuteOnThisExecutor || initResult.Status == WorkflowState.Success)
             return new WorkflowHandleDbPoll<T>(_db, _serializer, workflowId);
@@ -148,6 +158,41 @@ public sealed class DbosExecutor : IAsyncDisposable
         }, CancellationToken.None);
 
         return new WorkflowHandleTcs<T>(workflowId, tcs, _db);
+    }
+
+    /// <summary>
+    /// Loads a previously-enqueued or crashed workflow from the database by ID and re-executes it.
+    /// The caller is responsible for ensuring the workflow is already in a runnable state (PENDING or ENQUEUED).
+    /// Port of Java's <c>executeWorkflowById</c>.
+    /// </summary>
+    public async Task ExecuteWorkflowByIdAsync(
+        string workflowId,
+        bool isRecoveryRequest,
+        bool isDequeuedRequest,
+        CancellationToken ct = default)
+    {
+        var status = await _db.GetWorkflowStatusAsync(workflowId, ct).ConfigureAwait(false)
+            ?? throw new InvalidOperationException($"Workflow not found: {workflowId}");
+
+        var fqName = RegisteredWorkflow.FullyQualifiedName(
+            status.WorkflowName ?? string.Empty,
+            status.ClassName ?? string.Empty,
+            status.InstanceName);
+
+        if (!_workflowMap.TryGetValue(fqName, out var workflow))
+            throw new InvalidOperationException(
+                $"Workflow '{fqName}' is not registered on this executor.");
+
+        var rawInputs = await _db.GetWorkflowInputsAsync(workflowId, ct).ConfigureAwait(false);
+        var inputs = rawInputs is not null
+            ? (object?[]?)_serializer.Deserialize(rawInputs)
+            : null;
+
+        var opts = new StartWorkflowOptions { WorkflowId = workflowId };
+
+        await StartWorkflowAsync<object?>(
+            workflow, inputs, opts,
+            isDequeuedRequest: isDequeuedRequest, ct: ct).ConfigureAwait(false);
     }
 
     /// <summary>

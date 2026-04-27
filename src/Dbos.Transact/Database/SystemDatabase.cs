@@ -58,6 +58,9 @@ public abstract class SystemDatabase : IAsyncDisposable
     public Task<string?> GetWorkflowSerializationAsync(string workflowId, CancellationToken ct = default) =>
         DbRetryAsync(c => WorkflowDao.GetWorkflowSerializationAsync(workflowId, c), ct);
 
+    public Task<string?> GetWorkflowInputsAsync(string workflowId, CancellationToken ct = default) =>
+        DbRetryAsync(c => WorkflowDao.GetWorkflowInputsAsync(workflowId, c), ct);
+
     public Task<IReadOnlyList<WorkflowStatus>> ListWorkflowsAsync(ListWorkflowsInput input, CancellationToken ct = default) =>
         DbRetryAsync(c => WorkflowDao.ListWorkflowsAsync(input, c), ct);
 
@@ -110,6 +113,9 @@ public abstract class SystemDatabase : IAsyncDisposable
 
     public Task<string> ForkWorkflowAsync(string originalWorkflowId, int startStep, ForkOptions options, CancellationToken ct = default) =>
         DbRetryAsync(c => WorkflowDao.ForkWorkflowAsync(originalWorkflowId, startStep, options, c), ct);
+
+    public Task TransitionDelayedWorkflowsAsync(CancellationToken ct = default) =>
+        DbRetryAsync(c => WorkflowDao.TransitionDelayedWorkflowsAsync(c), ct);
 
     // ── Steps ─────────────────────────────────────────────────────────────
 
