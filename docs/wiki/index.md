@@ -1,7 +1,7 @@
 ---
 title: "Knowledge Base Index"
 type: index
-updated: 2026-04-25
+updated: 2026-04-27
 ---
 
 # Knowledge Base Index
@@ -24,6 +24,7 @@ Master catalog of all wiki pages. Every page in the wiki must have an entry here
 | [[concepts/asynclocal-vs-threadlocal]] | csharp, async, context, port-decision, foundational | high | 2026-04-25 |
 | [[concepts/appversion-signature-hashing]] | csharp, port-decision, versioning, foundational | high | 2026-04-25 |
 | [[concepts/stj-polymorphic-discriminator]] | csharp, serialization, port-decision, conductor-protocol, json, foundational | high | 2026-04-25 |
+| [[concepts/queue-dequeue-flow]] | queues, executor, serialization, port-decision, foundational | high | 2026-04-27 |
 
 ## Entities
 
@@ -54,8 +55,8 @@ Master catalog of all wiki pages. Every page in the wiki must have an entry here
 
 ## Statistics
 
-- **Total pages**: 23
-- **Concepts**: 12
+- **Total pages**: 24
+- **Concepts**: 13
 - **Entities**: 10
 - **Summaries**: 1
 - **Syntheses**: 0

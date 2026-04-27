@@ -86,3 +86,25 @@ Each entry follows this format:
 - **Pages updated**: `index.md` (added entry, bumped totals from 22→23, concepts 11→12, high-confidence 11→12)
 - **Notes**:
   - `stj-polymorphic-discriminator.md`: Documents how `[JsonPolymorphic]` + `[JsonDerivedType]` maps to Java's Jackson `@JsonTypeInfo(visible=true)` + `@JsonSubTypes`. Key gotcha: `IgnoreUnrecognizedTypeDiscriminators = true` does NOT return null for abstract base types — it still throws `NotSupportedException` because STJ falls back to instantiating the abstract base class. Also documents CA1716 (C# reserved keyword `step`) requiring `StepEntry` rename for the `ListStepsResponse` nested class.
+
+### 2026-04-27 — Port Decision Capture
+
+- **Source/Trigger**: DBOS-22 implementation (PR #42) — DbosExecutor integration tests uncovered two runtime bugs
+- **Pages created**: none
+- **Pages updated**:
+  - `concepts/method-interception.md` (added concrete-vs-interface attribute-resolution pitfall)
+  - `index.md` (updated date)
+- **Notes**:
+  - **Castle attribute resolution pitfall**: `Castle.IInvocation.Method` is the interface method; the concrete class method resolved via `target.GetType().GetMethod(...)` typically does NOT carry `[Step]`/`[Workflow]` attributes. Calling `IsDefined` on the concrete method alone silently bypasses all step checkpointing. Fix: prefer the concrete method when it has the attribute, otherwise fall back to `invocation.Method`.
+  - **WorkflowState DB enum case mismatch**: The system DB stores workflow states as uppercase strings ("SUCCESS", "PENDING"); C# enum values are PascalCase ("Success"). `Enum.TryParse<WorkflowState>` is case-sensitive and silently returns false, making `ToWorkflowStatus()` yield `Status = null` on every row — causing `AwaitWorkflowResultAsync` to poll forever. Fixed by switching to `WorkflowStateExtensions.ParseDbStatus` (case-insensitive).
+
+### 2026-04-27 — Port Decision Capture
+
+- **Source/Trigger**: DBOS-23 implementation (PR #43) — QueueService, dequeue DAOs, and executor re-execution exposed two bugs and one serialization gap
+- **Pages created**:
+  - `concepts/queue-dequeue-flow.md`
+- **Pages updated**: `index.md` (added entry, bumped totals from 23→24, concepts 12→13)
+- **Notes**:
+  - **ENQUEUED early-return missing**: Java's `executeWorkflow` returns a poll handle immediately when `queueName != null`, never running the workflow body. The C# port was missing this guard, causing queued workflows to execute immediately and bypass the queue entirely. Fix: check `opts.QueueName is not null` in `StartWorkflowAsync` before the `ShouldExecuteOnThisExecutor` check.
+  - **object?[] serializer round-trip**: STJ deserializes `object[]` elements as `JsonElement` rather than their original CLR types. `MethodInfo.Invoke` then throws `ArgumentException` when the parameter expects `int` but receives `JsonElement`. Fix: `DbosJsonSerializer.Serialize(object?[])` now wraps each element in its own `TypeEnvelope`; `Deserialize` decodes per-element envelopes when outer type is `object[]`.
+  - **DB locking strategy**: Postgres uses `FOR UPDATE SKIP LOCKED` (no global concurrency limit) or `FOR UPDATE NOWAIT` (with global limit) under `REPEATABLE READ`. SQLite uses `IsolationLevel.Serializable` (= `BEGIN IMMEDIATE`) to serialize access. Documented in `concepts/queue-dequeue-flow.md`.
