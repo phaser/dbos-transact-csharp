@@ -25,6 +25,8 @@ public abstract class WorkflowDao
 
     public abstract Task<string?> GetWorkflowSerializationAsync(string workflowId, CancellationToken ct = default);
 
+    public abstract Task<string?> GetWorkflowInputsAsync(string workflowId, CancellationToken ct = default);
+
     public abstract Task<IReadOnlyList<WorkflowStatus>> ListWorkflowsAsync(ListWorkflowsInput input, CancellationToken ct = default);
 
     public abstract Task<IReadOnlyList<WorkflowAggregateRow>> GetWorkflowAggregatesAsync(GetWorkflowAggregatesInput input, CancellationToken ct = default);
@@ -48,4 +50,6 @@ public abstract class WorkflowDao
     public abstract Task DeleteWorkflowsAsync(IReadOnlyList<string> workflowIds, bool deleteChildren, CancellationToken ct = default);
 
     public abstract Task<string> ForkWorkflowAsync(string originalWorkflowId, int startStep, ForkOptions options, CancellationToken ct = default);
+
+    public abstract Task TransitionDelayedWorkflowsAsync(CancellationToken ct = default);
 }

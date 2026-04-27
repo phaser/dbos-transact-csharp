@@ -72,6 +72,7 @@ public sealed class SystemDatabaseTests
         public override Task RecordWorkflowOutputAsync(string w, string? o, CancellationToken ct = default) => throw new NotImplementedException();
         public override Task RecordWorkflowErrorAsync(string w, string? e, CancellationToken ct = default) => throw new NotImplementedException();
         public override Task<string?> GetWorkflowSerializationAsync(string w, CancellationToken ct = default) => throw new NotImplementedException();
+        public override Task<string?> GetWorkflowInputsAsync(string w, CancellationToken ct = default) => throw new NotImplementedException();
         public override Task<IReadOnlyList<WorkflowStatus>> ListWorkflowsAsync(ListWorkflowsInput i, CancellationToken ct = default) => throw new NotImplementedException();
         public override Task<IReadOnlyList<WorkflowAggregateRow>> GetWorkflowAggregatesAsync(GetWorkflowAggregatesInput i, CancellationToken ct = default) => throw new NotImplementedException();
         public override Task<IReadOnlyList<WorkflowStatus>> GetPendingWorkflowsAsync(IReadOnlyList<string> e, string? v, CancellationToken ct = default) => throw new NotImplementedException();
@@ -81,6 +82,7 @@ public sealed class SystemDatabaseTests
         public override Task ResumeWorkflowsAsync(IReadOnlyList<string> w, string? q, CancellationToken ct = default) => throw new NotImplementedException();
         public override Task DeleteWorkflowsAsync(IReadOnlyList<string> w, bool d, CancellationToken ct = default) => throw new NotImplementedException();
         public override Task<string> ForkWorkflowAsync(string o, int s, ForkOptions f, CancellationToken ct = default) => throw new NotImplementedException();
+        public override Task TransitionDelayedWorkflowsAsync(CancellationToken ct = default) => throw new NotImplementedException();
     }
 
     private sealed class FailThenSucceedWorkflowDao(int failCount) : WorkflowDao
@@ -108,6 +110,7 @@ public sealed class SystemDatabaseTests
         public override Task RecordWorkflowOutputAsync(string w, string? o, CancellationToken ct = default) => throw new NotImplementedException();
         public override Task RecordWorkflowErrorAsync(string w, string? e, CancellationToken ct = default) => throw new NotImplementedException();
         public override Task<string?> GetWorkflowSerializationAsync(string w, CancellationToken ct = default) => throw new NotImplementedException();
+        public override Task<string?> GetWorkflowInputsAsync(string w, CancellationToken ct = default) => throw new NotImplementedException();
         public override Task<IReadOnlyList<WorkflowStatus>> ListWorkflowsAsync(ListWorkflowsInput i, CancellationToken ct = default) => throw new NotImplementedException();
         public override Task<IReadOnlyList<WorkflowAggregateRow>> GetWorkflowAggregatesAsync(GetWorkflowAggregatesInput i, CancellationToken ct = default) => throw new NotImplementedException();
         public override Task<IReadOnlyList<WorkflowStatus>> GetPendingWorkflowsAsync(IReadOnlyList<string> e, string? v, CancellationToken ct = default) => throw new NotImplementedException();
@@ -117,6 +120,7 @@ public sealed class SystemDatabaseTests
         public override Task ResumeWorkflowsAsync(IReadOnlyList<string> w, string? q, CancellationToken ct = default) => throw new NotImplementedException();
         public override Task DeleteWorkflowsAsync(IReadOnlyList<string> w, bool d, CancellationToken ct = default) => throw new NotImplementedException();
         public override Task<string> ForkWorkflowAsync(string o, int s, ForkOptions f, CancellationToken ct = default) => throw new NotImplementedException();
+        public override Task TransitionDelayedWorkflowsAsync(CancellationToken ct = default) => throw new NotImplementedException();
     }
 
     private sealed class TransientDbException(string message) : Exception(message);

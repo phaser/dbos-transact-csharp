@@ -26,9 +26,20 @@ public sealed class DbosJsonSerializer : IDbosSerializer
         if (value is null) return null;
         var type = value.GetType();
         var typeName = $"{type.FullName}, {type.Assembly.GetName().Name}";
+
+        // object?[] elements lose their CLR types on STJ round-trip unless each element
+        // carries its own type envelope. Workflow args are always stored as object?[].
+        if (value is object?[] argArray)
+        {
+            var perElemEnvelopes = argArray
+                .Select(elem => elem is null ? (TypeEnvelope?)null : MakeEnvelope(elem))
+                .ToArray();
+            var arrayElement = JsonSerializer.SerializeToElement<TypeEnvelope?[]>(perElemEnvelopes, Options);
+            return JsonSerializer.Serialize(new TypeEnvelope(typeName, arrayElement), Options);
+        }
+
         var valueElement = JsonSerializer.SerializeToElement(value, type, Options);
-        var envelope = new TypeEnvelope(typeName, valueElement);
-        return JsonSerializer.Serialize(envelope, Options);
+        return JsonSerializer.Serialize(new TypeEnvelope(typeName, valueElement), Options);
     }
 
     public object? Deserialize(string? text)
@@ -36,6 +47,28 @@ public sealed class DbosJsonSerializer : IDbosSerializer
         if (text is null) return null;
         var envelope = JsonSerializer.Deserialize<TypeEnvelope>(text, Options)
             ?? throw new InvalidOperationException("Failed to parse serialization envelope.");
+        var type = Type.GetType(envelope.T)
+            ?? throw new InvalidOperationException($"Cannot resolve type: {envelope.T}");
+
+        // Reconstruct object?[] by decoding each per-element envelope
+        if (type == typeof(object[]))
+        {
+            var perElemEnvelopes = JsonSerializer.Deserialize<TypeEnvelope?[]>(envelope.V.GetRawText(), Options) ?? [];
+            return perElemEnvelopes.Select(e => e is null ? null : DecodeEnvelope(e)).ToArray();
+        }
+
+        return JsonSerializer.Deserialize(envelope.V.GetRawText(), type, Options);
+    }
+
+    private static TypeEnvelope MakeEnvelope(object value)
+    {
+        var type = value.GetType();
+        var typeName = $"{type.FullName}, {type.Assembly.GetName().Name}";
+        return new TypeEnvelope(typeName, JsonSerializer.SerializeToElement(value, type, Options));
+    }
+
+    private static object? DecodeEnvelope(TypeEnvelope envelope)
+    {
         var type = Type.GetType(envelope.T)
             ?? throw new InvalidOperationException($"Cannot resolve type: {envelope.T}");
         return JsonSerializer.Deserialize(envelope.V.GetRawText(), type, Options);

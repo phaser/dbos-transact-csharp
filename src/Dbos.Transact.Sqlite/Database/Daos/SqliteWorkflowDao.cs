@@ -146,6 +146,15 @@ public sealed class SqliteWorkflowDao : WorkflowDao
             new CommandDefinition(sql, new { WorkflowId = workflowId }, cancellationToken: ct));
     }
 
+    public override async Task<string?> GetWorkflowInputsAsync(string workflowId, CancellationToken ct = default)
+    {
+        const string sql = "SELECT inputs FROM workflow_status WHERE workflow_uuid = @WorkflowId";
+        await using var connection = _connectionFactory();
+        await connection.OpenAsync(ct);
+        return await connection.QuerySingleOrDefaultAsync<string?>(
+            new CommandDefinition(sql, new { WorkflowId = workflowId }, cancellationToken: ct));
+    }
+
     public override async Task RecordWorkflowOutputAsync(string workflowId, string? result, CancellationToken ct = default)
     {
         const string sql = """
@@ -490,4 +499,22 @@ public sealed class SqliteWorkflowDao : WorkflowDao
 
     public override Task<string> ForkWorkflowAsync(string originalWorkflowId, int startStep, ForkOptions options, CancellationToken ct = default) =>
         throw new NotImplementedException();
+
+    public override async Task TransitionDelayedWorkflowsAsync(CancellationToken ct = default)
+    {
+        const string sql = """
+            UPDATE workflow_status
+               SET status = @Enqueued
+             WHERE status = @Delayed
+               AND delay_until_epoch_ms <= @NowMs
+            """;
+
+        await using var connection = _connectionFactory();
+        await connection.ExecuteAsync(new CommandDefinition(sql, new
+        {
+            Enqueued = WorkflowState.Enqueued.ToDbString(),
+            Delayed = WorkflowState.Delayed.ToDbString(),
+            NowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+        }, cancellationToken: ct)).ConfigureAwait(false);
+    }
 }
