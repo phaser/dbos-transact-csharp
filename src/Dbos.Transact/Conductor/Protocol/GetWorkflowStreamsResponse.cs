@@ -20,7 +20,7 @@ public sealed class GetWorkflowStreamsResponse : BaseResponse
 
     public GetWorkflowStreamsResponse(BaseMessage message, Dictionary<string, List<object?>> streamData)
         : base(message.Type, message.RequestId) =>
-        Streams = [..streamData.Select(e => StreamEntryOutput.From(e.Key, e.Value))];
+        Streams = [.. streamData.Select(e => StreamEntryOutput.From(e.Key, e.Value))];
 
     public GetWorkflowStreamsResponse(BaseMessage message, Exception ex)
         : base(message.Type, message.RequestId, ex.Message) { }

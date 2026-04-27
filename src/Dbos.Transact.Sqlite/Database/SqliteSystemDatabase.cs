@@ -1,6 +1,7 @@
 using System.Data.Common;
 using Dbos.Transact.Database;
 using Dbos.Transact.Database.Daos;
+using Dbos.Transact.Json;
 using Dbos.Transact.Sqlite.Database.Daos;
 using Microsoft.Data.Sqlite;
 
@@ -21,9 +22,10 @@ public sealed class SqliteSystemDatabase : SystemDatabase
     protected override SchedulesDao SchedulesDao { get; }
     protected override StreamsDao StreamsDao { get; }
 
-    public SqliteSystemDatabase(string connectionString)
+    public SqliteSystemDatabase(string connectionString, IDbosSerializer? serializer = null)
     {
         _connectionString = connectionString;
+        var resolvedSerializer = serializer ?? DbosJsonSerializer.Instance;
 
         DbConnection Factory() => new SqliteConnection(_connectionString);
 
@@ -31,7 +33,7 @@ public sealed class SqliteSystemDatabase : SystemDatabase
         StepsDao = new SqliteStepsDao(Factory);
         QueuesDao = new SqliteQueuesDao(Factory);
         NotificationsDao = new SqliteNotificationsDao(Factory);
-        SchedulesDao = new SqliteSchedulesDao(Factory);
+        SchedulesDao = new SqliteSchedulesDao(Factory, resolvedSerializer);
         StreamsDao = new SqliteStreamsDao(Factory);
     }
 

@@ -20,7 +20,7 @@ public sealed class GetWorkflowEventsResponse : BaseResponse
 
     public GetWorkflowEventsResponse(BaseMessage message, Dictionary<string, object?> events)
         : base(message.Type, message.RequestId) =>
-        Events = [..events.Select(EventOutput.From)];
+        Events = [.. events.Select(EventOutput.From)];
 
     public GetWorkflowEventsResponse(BaseMessage message, Exception ex)
         : base(message.Type, message.RequestId, ex.Message) { }
