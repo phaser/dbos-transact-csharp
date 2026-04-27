@@ -90,6 +90,7 @@ public class WorkflowHandleDbPollTests
         public override Task RecordWorkflowOutputAsync(string w, string? result, CancellationToken ct = default) => throw new NotImplementedException();
         public override Task RecordWorkflowErrorAsync(string w, string? errorPayload, CancellationToken ct = default) => throw new NotImplementedException();
         public override Task<string?> GetWorkflowSerializationAsync(string w, CancellationToken ct = default) => throw new NotImplementedException();
+        public override Task<string?> GetWorkflowInputsAsync(string w, CancellationToken ct = default) => throw new NotImplementedException();
         public override Task<IReadOnlyList<WorkflowStatus>> ListWorkflowsAsync(ListWorkflowsInput i, CancellationToken ct = default) => throw new NotImplementedException();
         public override Task<IReadOnlyList<WorkflowAggregateRow>> GetWorkflowAggregatesAsync(GetWorkflowAggregatesInput i, CancellationToken ct = default) => throw new NotImplementedException();
         public override Task<IReadOnlyList<WorkflowStatus>> GetPendingWorkflowsAsync(IReadOnlyList<string> e, string? v, CancellationToken ct = default) => throw new NotImplementedException();
@@ -99,6 +100,7 @@ public class WorkflowHandleDbPollTests
         public override Task ResumeWorkflowsAsync(IReadOnlyList<string> w, string? q, CancellationToken ct = default) => throw new NotImplementedException();
         public override Task DeleteWorkflowsAsync(IReadOnlyList<string> w, bool d, CancellationToken ct = default) => throw new NotImplementedException();
         public override Task<string> ForkWorkflowAsync(string o, int s, ForkOptions f, CancellationToken ct = default) => throw new NotImplementedException();
+        public override Task TransitionDelayedWorkflowsAsync(CancellationToken ct = default) => throw new NotImplementedException();
     }
 
     private sealed class NoOpStepsDao : StepsDao

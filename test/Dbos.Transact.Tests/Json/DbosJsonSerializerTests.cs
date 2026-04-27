@@ -73,6 +73,22 @@ public class DbosJsonSerializerTests
     }
 
     [Fact]
+    public void RoundTrip_ObjectArray_PreservesElementTypes()
+    {
+        var args = new object?[] { 42, "hello", 3.14, true, null };
+        var result = (object?[]?)Sut.Deserialize(Sut.Serialize(args));
+        Assert.NotNull(result);
+        Assert.Equal(5, result.Length);
+        Assert.Equal(42, result[0]);
+        Assert.Equal("hello", result[1]);
+        Assert.Equal(3.14, result[2]);
+        Assert.Equal(true, result[3]);
+        Assert.Null(result[4]);
+        Assert.IsType<int>(result[0]);
+        Assert.IsType<double>(result[2]);
+    }
+
+    [Fact]
     public void SerializedText_ContainsTypeName()
     {
         var json = Sut.Serialize(new TestPoint(0, 0));
