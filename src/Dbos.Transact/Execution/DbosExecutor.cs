@@ -23,6 +23,7 @@ public sealed class DbosExecutor : IAsyncDisposable
     private readonly string _executorId;
     private readonly string? _appVersion;
     private readonly string? _appId;
+    private readonly QueueRegistry _queueRegistry;
     private readonly ConcurrentDictionary<string, bool> _workflowsInProgress = new();
     private readonly ConcurrentDictionary<string, RegisteredWorkflow> _workflowMap = new();
 
@@ -31,16 +32,42 @@ public sealed class DbosExecutor : IAsyncDisposable
         IDbosSerializer serializer,
         string? executorId = null,
         string? appVersion = null,
-        string? appId = null)
+        string? appId = null,
+        QueueRegistry? queueRegistry = null)
     {
         _db = db;
         _serializer = serializer;
         _executorId = executorId ?? Guid.NewGuid().ToString();
         _appVersion = appVersion;
         _appId = appId;
+        _queueRegistry = queueRegistry ?? new QueueRegistry();
     }
 
     public string ExecutorId => _executorId;
+
+    /// <summary>App version reported on workflows started by this executor.</summary>
+    public string? LatestApplicationVersion => _appVersion;
+
+    /// <summary>Looks up a workflow by its fully qualified name (workflowName, className, instanceName).</summary>
+    public RegisteredWorkflow? GetRegisteredWorkflow(string workflowName, string? className, string? instanceName = null)
+    {
+        var fq = RegisteredWorkflow.FullyQualifiedName(workflowName, className ?? string.Empty, instanceName);
+        return _workflowMap.TryGetValue(fq, out var wf) ? wf : null;
+    }
+
+    /// <summary>Returns all registered workflows.</summary>
+    public IReadOnlyCollection<RegisteredWorkflow> GetRegisteredWorkflows() => _workflowMap.Values.ToArray();
+
+    /// <summary>Looks up a queue registered on this executor.</summary>
+    public Queue? GetQueue(string queueName) => _queueRegistry.Get(queueName);
+
+    /// <summary>Reads the durable external-state value for the given (service, workflow, key).</summary>
+    public Task<ExternalState?> GetExternalStateAsync(string service, string workflowName, string key, CancellationToken ct = default) =>
+        _db.GetExternalStateAsync(service, workflowName, key, ct);
+
+    /// <summary>Upserts a durable external-state value, returning the post-upsert state.</summary>
+    public Task<ExternalState> UpsertExternalStateAsync(ExternalState state, CancellationToken ct = default) =>
+        _db.UpsertExternalStateAsync(state, ct);
 
     // ── Public API ────────────────────────────────────────────────────────────
 

@@ -73,12 +73,16 @@ public class WorkflowHandleDbPollTests
         protected override NotificationsDao NotificationsDao { get; } = new NoOpNotificationsDao();
         protected override SchedulesDao SchedulesDao { get; } = new NoOpSchedulesDao();
         protected override StreamsDao StreamsDao { get; } = new NoOpStreamsDao();
+        protected override EventDispatchKvDao EventDispatchKvDao { get; } = new NoOpEventDispatchKvDao();
 
         protected override Task<DbConnection> OpenConnectionAsync(CancellationToken ct) =>
             throw new NotImplementedException();
 
         public override Task StartAsync(CancellationToken ct = default) => Task.CompletedTask;
         public override ValueTask DisposeAsync() => ValueTask.CompletedTask;
+
+        public override Task<IAsyncDisposable?> TryAcquireSchedulerLeaderLockAsync(string key, CancellationToken ct = default) =>
+            throw new NotImplementedException();
     }
 
     private sealed class ConstantWorkflowDao(WorkflowStatus? status) : WorkflowDao
@@ -147,5 +151,11 @@ public class WorkflowHandleDbPollTests
         public override Task CloseStreamAsync(string w, int f, string k, CancellationToken ct = default) => throw new NotImplementedException();
         public override Task<object?> ReadStreamAsync(string w, string k, int o, CancellationToken ct = default) => throw new NotImplementedException();
         public override Task<IReadOnlyDictionary<string, IReadOnlyList<object?>>> GetAllStreamEntriesAsync(string w, CancellationToken ct = default) => throw new NotImplementedException();
+    }
+
+    private sealed class NoOpEventDispatchKvDao : EventDispatchKvDao
+    {
+        public override Task<ExternalState?> GetExternalStateAsync(string s, string w, string k, CancellationToken ct = default) => throw new NotImplementedException();
+        public override Task<ExternalState> UpsertExternalStateAsync(ExternalState st, CancellationToken ct = default) => throw new NotImplementedException();
     }
 }

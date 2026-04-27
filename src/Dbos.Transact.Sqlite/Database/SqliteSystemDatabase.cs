@@ -21,6 +21,7 @@ public sealed class SqliteSystemDatabase : SystemDatabase
     protected override NotificationsDao NotificationsDao { get; }
     protected override SchedulesDao SchedulesDao { get; }
     protected override StreamsDao StreamsDao { get; }
+    protected override EventDispatchKvDao EventDispatchKvDao { get; }
 
     public SqliteSystemDatabase(string connectionString, IDbosSerializer? serializer = null)
     {
@@ -35,6 +36,7 @@ public sealed class SqliteSystemDatabase : SystemDatabase
         NotificationsDao = new SqliteNotificationsDao(Factory);
         SchedulesDao = new SqliteSchedulesDao(Factory, resolvedSerializer);
         StreamsDao = new SqliteStreamsDao(Factory);
+        EventDispatchKvDao = new SqliteEventDispatchKvDao(Factory);
     }
 
     protected override async Task<DbConnection> OpenConnectionAsync(CancellationToken ct)
@@ -47,6 +49,17 @@ public sealed class SqliteSystemDatabase : SystemDatabase
     public override Task StartAsync(CancellationToken ct = default) => Task.CompletedTask;
 
     public override ValueTask DisposeAsync() => ValueTask.CompletedTask;
+
+    public override Task<IAsyncDisposable?> TryAcquireSchedulerLeaderLockAsync(string key, CancellationToken ct = default) =>
+        // SQLite is single-host: cross-process scheduler leadership is unnecessary.
+        // Always grant the lock; the holder is a no-op disposable.
+        Task.FromResult<IAsyncDisposable?>(NoOpLockHolder.Instance);
+
+    private sealed class NoOpLockHolder : IAsyncDisposable
+    {
+        public static readonly NoOpLockHolder Instance = new();
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
 
     protected override bool IsRetryable(Exception exception)
     {

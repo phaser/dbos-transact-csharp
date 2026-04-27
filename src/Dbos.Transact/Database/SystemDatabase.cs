@@ -27,12 +27,24 @@ public abstract class SystemDatabase : IAsyncDisposable
     protected abstract NotificationsDao NotificationsDao { get; }
     protected abstract SchedulesDao SchedulesDao { get; }
     protected abstract StreamsDao StreamsDao { get; }
+    protected abstract EventDispatchKvDao EventDispatchKvDao { get; }
 
     /// <summary>Opens and returns a fresh connection to the underlying database.</summary>
     protected abstract Task<DbConnection> OpenConnectionAsync(CancellationToken ct);
 
     public abstract Task StartAsync(CancellationToken ct = default);
     public abstract ValueTask DisposeAsync();
+
+    /// <summary>
+    /// Attempts to acquire an advisory lock used by <c>SchedulerService</c> to elect a single
+    /// leader across multiple executor processes. Returns a disposable that releases the lock
+    /// on disposal, or <c>null</c> if another holder already has it.
+    ///
+    /// Postgres uses session-scoped <c>pg_try_advisory_lock</c>. SQLite always returns a
+    /// no-op holder (single-host SQLite deployments do not need cross-process election;
+    /// see <c>concepts/scheduler-leadership-and-cron</c>).
+    /// </summary>
+    public abstract Task<IAsyncDisposable?> TryAcquireSchedulerLeaderLockAsync(string key, CancellationToken ct = default);
 
     // ── Workflow ──────────────────────────────────────────────────────────
 
@@ -231,6 +243,14 @@ public abstract class SystemDatabase : IAsyncDisposable
 
     public Task ApplySchedulesAsync(IReadOnlyList<WorkflowSchedule> schedules, CancellationToken ct = default) =>
         DbRetryAsync(c => SchedulesDao.ApplySchedulesAsync(schedules, c), ct);
+
+    // ── External state (event_dispatch_kv) ────────────────────────────────
+
+    public Task<ExternalState?> GetExternalStateAsync(string service, string workflowName, string key, CancellationToken ct = default) =>
+        DbRetryAsync(c => EventDispatchKvDao.GetExternalStateAsync(service, workflowName, key, c), ct);
+
+    public Task<ExternalState> UpsertExternalStateAsync(ExternalState state, CancellationToken ct = default) =>
+        DbRetryAsync(c => EventDispatchKvDao.UpsertExternalStateAsync(state, c), ct);
 
     // ── Streams ───────────────────────────────────────────────────────────
 
