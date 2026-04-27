@@ -3,7 +3,7 @@ title: "Method Interception"
 type: concept
 tags: [core, interception, decided-v1]
 created: 2026-04-24
-updated: 2026-04-24
+updated: 2026-04-27
 sources: ["raw/design.md"]
 confidence: high
 ---
@@ -34,6 +34,7 @@ Whenever a user service exposes `[Workflow]` / `[Step]` methods that the runtime
 - **No AOT / native-image support.** Castle emits IL at runtime — unusable under `PublishAot`. This is the primary reason AOT is an explicit v1 non-goal.
 - **Sealed classes / non-virtual methods.** Castle requires virtual members on class proxies; interface proxying sidesteps this and is the v1 requirement.
 - **Self-invocation.** A workflow calling another step on `this` bypasses the proxy (same pitfall as Spring AOP). Inject the interface and call through it.
+- **Attribute resolution: concrete vs interface method.** `Castle.IInvocation` exposes two method handles: `invocation.Method` (the interface method) and the concrete method resolved via `target.GetType().GetMethod(...)`. Users typically put `[Step]`/`[Workflow]` on the **interface**, not on the implementation class. Looking up attributes on the concrete class alone silently misses them — `IsDefined(typeof(StepAttribute))` returns false and the interceptor calls `invocation.Proceed()`, bypassing all checkpointing. The fix is to check both: use the concrete method if it carries the attribute, otherwise fall back to `invocation.Method`. This was discovered while implementing `DbosExecutor` in DBOS-22.
 - **Reflection surface in trimming scenarios.** Aggressive assembly trimming can strip types Castle discovers by reflection; trimmer annotations or `DynamicallyAccessedMembers` hints may be needed if users enable trimming.
 - **Planned migration.** A source-generator-based dispatch is the AOT-safe replacement for v2; the interception contract should be designed so the switch is a swap, not a rewrite (see [design.md §Open questions](#)).
 
