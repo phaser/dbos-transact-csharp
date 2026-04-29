@@ -7,6 +7,7 @@
   <!-- Runtime dependencies -->
   <ItemGroup>
     <PackageVersion Include="Castle.Core" Version="5.1.1" />
+    <PackageVersion Include="Cronos" Version="0.10.0" />
     <PackageVersion Include="Dapper" Version="2.1.35" />
     <PackageVersion Include="Npgsql" Version="9.0.3" />
     <PackageVersion Include="Microsoft.Data.Sqlite" Version="9.0.4" />

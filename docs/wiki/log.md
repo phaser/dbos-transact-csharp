@@ -108,3 +108,16 @@ Each entry follows this format:
   - **ENQUEUED early-return missing**: Java's `executeWorkflow` returns a poll handle immediately when `queueName != null`, never running the workflow body. The C# port was missing this guard, causing queued workflows to execute immediately and bypass the queue entirely. Fix: check `opts.QueueName is not null` in `StartWorkflowAsync` before the `ShouldExecuteOnThisExecutor` check.
   - **object?[] serializer round-trip**: STJ deserializes `object[]` elements as `JsonElement` rather than their original CLR types. `MethodInfo.Invoke` then throws `ArgumentException` when the parameter expects `int` but receives `JsonElement`. Fix: `DbosJsonSerializer.Serialize(object?[])` now wraps each element in its own `TypeEnvelope`; `Deserialize` decodes per-element envelopes when outer type is `object[]`.
   - **DB locking strategy**: Postgres uses `FOR UPDATE SKIP LOCKED` (no global concurrency limit) or `FOR UPDATE NOWAIT` (with global limit) under `REPEATABLE READ`. SQLite uses `IsolationLevel.Serializable` (= `BEGIN IMMEDIATE`) to serialize access. Documented in `concepts/queue-dequeue-flow.md`.
+
+### 2026-04-27 — Port Decision Capture
+
+- **Source/Trigger**: DBOS-24 implementation (PR for #29) — `SchedulerService` plus prerequisites (`ExternalState` DAO, advisory-lock primitive on `SystemDatabase`, `DbosExecutor` accessors).
+- **Pages created**:
+  - `concepts/scheduler-leadership-and-cron.md`
+- **Pages updated**: `index.md` (added entry, bumped totals from 24→25, concepts 13→14, high-confidence 12→13).
+- **Notes**:
+  - **Cron library**: `Cronos` (NuGet) supports both 5-field and 6-field expressions, matching Java's `cron-utils Spring53`. `SchedulerService.ParseCron` tries 6-field first then falls back to 5-field. Quartz.NET was rejected as too heavy; NCrontab as 5-field-only and unmaintained.
+  - **Leader-lock pattern as port improvement**: Java's scheduler is leaderless and relies on deterministic workflow IDs (`sched-{name}-{instant}`) colliding on the workflow_status PK to dedupe N executors firing the same instant. The C# port adds advisory-lock leadership (PG: `pg_try_advisory_lock(hashtext('dbos-scheduler-leader'))` on a session-scoped connection; SQLite: always-acquired no-op since a SQLite-backed instance is single-host). Documented in design.md §198 as the intended approach.
+  - **Per-instance leader scope**: One `SchedulerService` instance holds the leader lock for its entire lifetime. Lost on dispose or process crash (PG releases on connection close). Other instances' poll loop retry-acquire every `LeaderRetryInterval` (5s default).
+  - **Annotated schedules in v1**: `[Scheduled]` on a registered workflow is discovered by reflection on each poll tick. `automaticBackfill` is *not* implemented for annotated schedules in v1 (the `ExternalState` infrastructure was added but is unused by the scheduler — flagged for follow-up).
+  - **DB schedule context column NOT NULL**: Mirrors a Java/migration constraint. Null `Context` is stored as the JSON literal `"null"` sentinel and decoded back to `null` on read. Implemented in DBOS-24-prerequisite (PR #44 for `SchedulesDao`); reused here via `db.GetScheduleAsync`.
