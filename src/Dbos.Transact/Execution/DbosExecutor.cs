@@ -122,8 +122,11 @@ public sealed class DbosExecutor : IAsyncDisposable
             ParentWorkflowId: parent?.WorkflowId,
             Serialization: _serializer.Name);
 
-        // maxRetries ≤ 0 means unlimited
-        var maxRetries = workflow.MaxRecoveryAttempts > 0 ? workflow.MaxRecoveryAttempts : int.MaxValue;
+        // Mirror Java DBOSExecutor: missing/non-positive MaxRecoveryAttempts falls back to the default.
+        // (Using int.MaxValue here trips the DAO's `maxRetries + 1` overflow check.)
+        var maxRetries = workflow.MaxRecoveryAttempts > 0
+            ? workflow.MaxRecoveryAttempts
+            : Constants.DefaultMaxRecoveryAttempts;
 
         var initResult = await _db.InitWorkflowStatusAsync(
             initStatus, maxRetries, isRecoveryRequest: false, isDequeuedRequest: isDequeuedRequest, ct)

@@ -56,4 +56,70 @@ public class QueueTests
         var b = new Queue("q");
         Assert.Equal(a, b);
     }
+
+    [Fact]
+    public void WithName_ReturnsRenamedCopy()
+    {
+        var q = new Queue("a").WithName("b");
+        Assert.Equal("b", q.Name);
+    }
+
+    [Fact]
+    public void WithConcurrency_SetsAndClears()
+    {
+        var q = new Queue("q").WithConcurrency(4);
+        Assert.Equal(4, q.Concurrency);
+        Assert.Null(q.WithConcurrency(null).Concurrency);
+    }
+
+    [Fact]
+    public void WithWorkerConcurrency_SetsAndClears()
+    {
+        var q = new Queue("q").WithWorkerConcurrency(2);
+        Assert.Equal(2, q.WorkerConcurrency);
+        Assert.Null(q.WithWorkerConcurrency(null).WorkerConcurrency);
+    }
+
+    [Fact]
+    public void WithPriorityEnabled_TogglesFlag()
+    {
+        var q = new Queue("q").WithPriorityEnabled(true);
+        Assert.True(q.PriorityEnabled);
+        Assert.False(q.WithPriorityEnabled(false).PriorityEnabled);
+    }
+
+    [Fact]
+    public void WithPartitioningEnabled_TogglesFlag()
+    {
+        var q = new Queue("q").WithPartitioningEnabled(true);
+        Assert.True(q.PartitioningEnabled);
+        Assert.False(q.WithPartitioningEnabled(false).PartitioningEnabled);
+    }
+
+    [Fact]
+    public void WithRateLimit_Duration_SetsLimiter()
+    {
+        var q = new Queue("q").WithRateLimit(5, TimeSpan.FromSeconds(10));
+        Assert.NotNull(q.RateLimit);
+        Assert.Equal(5, q.RateLimit!.Limit);
+        Assert.Equal(TimeSpan.FromSeconds(10), q.RateLimit.Period);
+        Assert.True(q.HasLimiter);
+    }
+
+    [Fact]
+    public void WithRateLimit_Seconds_SetsLimiter()
+    {
+        var q = new Queue("q").WithRateLimit(3, periodSeconds: 1.5);
+        Assert.NotNull(q.RateLimit);
+        Assert.Equal(3, q.RateLimit!.Limit);
+        Assert.Equal(TimeSpan.FromMilliseconds(1500), q.RateLimit.Period);
+    }
+
+    [Fact]
+    public void WithRateLimit_Null_ClearsLimiter()
+    {
+        var q = new Queue("q").WithRateLimit(5, TimeSpan.FromSeconds(10)).WithRateLimit(null);
+        Assert.Null(q.RateLimit);
+        Assert.False(q.HasLimiter);
+    }
 }
