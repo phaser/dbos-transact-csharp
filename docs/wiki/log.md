@@ -175,3 +175,16 @@ Each entry follows this format:
     - `RecoverPendingWorkflowsAsync(executorIds)` — calls `GetPendingWorkflowsAsync` then `ExecuteWorkflowByIdAsync(isRecoveryRequest: true)` for each, returning the dispatched IDs. Mirrors Java's `recoverPendingWorkflows`.
     - `DeactivateLifecycleListeners()` / `IsDeactivated` — port-fidelity flag toggle. The Java implementation also stops queue/scheduler lifecycle; in C# the equivalent integration would happen via `IDbosLifecycleListener`. v1 is a no-op flag.
   - **Fork success-path test deferred**: `ForkWorkflowAsync` throws `NotImplementedException` in both Postgres and SQLite DAOs (pre-existing port gap). The fork endpoint is wired and routing is verified via `Fork_GET_Returns405` / `Fork_PostWithoutJson_Returns415`; the success path will be added when the DAO impls land.
+
+
+### 2026-04-30 — Port Decision Capture
+
+- **Source/Trigger**: DBOS-27 implementation (PR for #8) — `Conductor/Conductor.cs` (WebSocket client to DBOS Cloud).
+- **Pages created**: —
+- **Pages updated**: —
+- **Notes**:
+  - **`ClientWebSocket` instead of HttpClient.WebSocket**: `System.Net.WebSockets.ClientWebSocket` is the BCL equivalent of Java's `HttpClient.newWebSocketBuilder()`. Single connect-loop on a background task with reconnect-after-delay on failure. `KeepAliveInterval = pingPeriod` enables the BCL's automatic ping/pong (the C# port doesn't reimplement Java's manual ping/pong scheduler — `ClientWebSocket.Options.KeepAliveInterval` covers it cleanly).
+  - **Per-message handler tasks**: Receive loop reassembles fragmented WebSocket frames into a full text message, then dispatches each message via `Task.Run` so subsequent receives aren't blocked by handler work. Mirrors Java's pattern of `getResponseAsync(...).whenComplete(...)`.
+  - **Send is serialized via `SemaphoreSlim`**: `ClientWebSocket.SendAsync` is not safe for concurrent calls. A single send-lock ensures handler tasks dispatch responses one at a time without interleaving fragments.
+  - **Handler subset**: Backed handlers — ExecutorInfo, Cancel, Resume, Delete, Recovery, ListWorkflows, ListQueuedWorkflows, ListSteps, GetWorkflow, ExistPendingWorkflows, ListSchedules, GetSchedule, PauseSchedule, ResumeSchedule. Deferred handlers (Restart, Fork, Import/ExportWorkflow, GetMetrics, GetWorkflowAggregates, GetWorkflowEvents/Notifications/Streams, Alert, BackfillSchedule, TriggerSchedule, ListApplicationVersions, SetLatestApplicationVersion, Retention) — these all need new `SystemDatabase` / `DbosExecutor` methods that don't exist in the C# port yet, so they reply with `BaseResponse(type, requestId, "Message type not implemented in the C# port v1.")`. The Cloud side sees an explicit error rather than the request hanging.
+  - **In-memory test server via `HttpListener.AcceptWebSocketAsync`**: Java's tests use a Netty-backed test server. The C# port uses `HttpListener.AcceptWebSocketAsync` (BCL) — same in-memory pattern, no new dependencies. Caveat: `HttpListener.Prefixes` requires a trailing `/`, so the test server normalizes the prefix path while exposing a slash-free `ws://...` URL for the conductor to dial. Without the trailing slash on the prefix, `HttpListener` throws `ArgumentException: Only Uri prefixes ending in '/' are allowed.`
