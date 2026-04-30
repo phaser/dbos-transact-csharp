@@ -12,6 +12,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # MinVer needs the full tag history
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
@@ -26,3 +28,6 @@ jobs:
 
       - name: Test
         run: dotnet test --no-build --configuration Release --verbosity normal
+
+      - name: Pack (verify packaging)
+        run: dotnet pack --no-build --configuration Release -o /tmp/nupkgs

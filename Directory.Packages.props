@@ -23,6 +23,12 @@
     <PackageVersion Include="System.CommandLine" Version="2.0.7" />
   </ItemGroup>
 
+  <!-- Packaging tooling (PrivateAssets=All — build-time only) -->
+  <ItemGroup>
+    <PackageVersion Include="MinVer" Version="5.0.0" />
+    <PackageVersion Include="Microsoft.SourceLink.GitHub" Version="8.0.0" />
+  </ItemGroup>
+
   <!-- Test infrastructure -->
   <ItemGroup>
     <PackageVersion Include="coverlet.collector" Version="6.0.4" />

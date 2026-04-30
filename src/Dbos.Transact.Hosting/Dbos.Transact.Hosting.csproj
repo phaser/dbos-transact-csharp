@@ -1,5 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
+  <PropertyGroup>
+    <Description>Microsoft.Extensions.Hosting integration for DBOS — IHostedService wiring and DI registration.</Description>
+  </PropertyGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\Dbos.Transact\Dbos.Transact.csproj" />
   </ItemGroup>

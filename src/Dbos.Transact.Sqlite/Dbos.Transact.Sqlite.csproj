@@ -1,5 +1,9 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
+  <PropertyGroup>
+    <Description>SQLite dialect for DBOS — lightweight workflow persistence for single-host deployments.</Description>
+  </PropertyGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\Dbos.Transact\Dbos.Transact.csproj" />
   </ItemGroup>
