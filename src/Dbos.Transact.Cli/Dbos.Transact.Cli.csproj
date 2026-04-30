@@ -2,6 +2,30 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
+    <RootNamespace>Dbos.Transact.Cli</RootNamespace>
+    <AssemblyName>dbos</AssemblyName>
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>dbos</ToolCommandName>
+    <PackageId>Dbos.Transact.Cli</PackageId>
+    <Description>DBOS CLI — manage DBOS workflows and the system database.</Description>
   </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Dbos.Transact\Dbos.Transact.csproj" />
+    <ProjectReference Include="..\Dbos.Transact.Postgres\Dbos.Transact.Postgres.csproj" />
+    <ProjectReference Include="..\Dbos.Transact.Sqlite\Dbos.Transact.Sqlite.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.CommandLine" />
+    <PackageReference Include="Npgsql" />
+    <PackageReference Include="Microsoft.Data.Sqlite" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
+      <_Parameter1>Dbos.Transact.Cli.Tests</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
 
 </Project>
