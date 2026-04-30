@@ -61,6 +61,44 @@ public sealed class DbosExecutor : IAsyncDisposable
     /// <summary>Looks up a queue registered on this executor.</summary>
     public Queue? GetQueue(string queueName) => _queueRegistry.Get(queueName);
 
+    /// <summary>Returns a snapshot of all queues registered on this executor (including the internal queue).</summary>
+    public IReadOnlyList<Queue> GetQueues() => _queueRegistry.GetSnapshot();
+
+    /// <summary>
+    /// True when this executor has been deactivated (see <see cref="DeactivateLifecycleListeners"/>).
+    /// </summary>
+    public bool IsDeactivated => _isDeactivated;
+
+    private volatile bool _isDeactivated;
+
+    /// <summary>
+    /// Marks this executor as deactivated. Mirrors Java's <c>DBOSExecutor.deactivateLifecycleListeners</c>;
+    /// for the C# port v1 it is a no-op flag toggle exposed through the admin <c>/deactivate</c> endpoint.
+    /// </summary>
+    public void DeactivateLifecycleListeners() => _isDeactivated = true;
+
+    /// <summary>
+    /// Reads workflows in PENDING state owned by any of <paramref name="executorIds"/> (and matching this
+    /// executor's app version) and re-issues them through <see cref="ExecuteWorkflowByIdAsync"/> with
+    /// <c>isRecoveryRequest = true</c>. Returns the workflow IDs that were dispatched. Mirrors Java's
+    /// <c>recoverPendingWorkflows</c>.
+    /// </summary>
+    public async Task<IReadOnlyList<string>> RecoverPendingWorkflowsAsync(
+        IReadOnlyList<string> executorIds, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(executorIds);
+        var pending = await _db.GetPendingWorkflowsAsync(executorIds, _appVersion, ct).ConfigureAwait(false);
+        var dispatched = new List<string>(pending.Count);
+        foreach (var status in pending)
+        {
+            if (string.IsNullOrEmpty(status.WorkflowId)) continue;
+            await ExecuteWorkflowByIdAsync(status.WorkflowId, isRecoveryRequest: true, isDequeuedRequest: false, ct)
+                .ConfigureAwait(false);
+            dispatched.Add(status.WorkflowId);
+        }
+        return dispatched;
+    }
+
     /// <summary>Reads the durable external-state value for the given (service, workflow, key).</summary>
     public Task<ExternalState?> GetExternalStateAsync(string service, string workflowName, string key, CancellationToken ct = default) =>
         _db.GetExternalStateAsync(service, workflowName, key, ct);
