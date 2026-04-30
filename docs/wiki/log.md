@@ -159,3 +159,19 @@ Each entry follows this format:
   - **Dialect autodetection from connection string**: Java's CLI accepted JDBC URLs and dispatched on the `jdbc:postgresql:` / `jdbc:sqlite:` prefix. C# accepts native ADO.NET connection strings (Npgsql / Microsoft.Data.Sqlite shapes), which have no scheme prefix. `DatabaseOptions.ResolveDialect` heuristics: starts with `Data Source=` / `Filename=` or ends with `.sqlite` / `.db` → SQLite, else Postgres. An explicit `--dialect` flag overrides the heuristic.
   - **`reset` for SQLite is "delete the file"**: Java's `reset` is PG-only — it issues `DROP DATABASE ... CREATE DATABASE` against the postgres "control" database. SQLite has no equivalent; the C# port deletes the file and its WAL/SHM sidecars after `SqliteConnection.ClearAllPools()`. In-memory SQLite databases cannot be reset (errors out with exit code 1).
   - **`postgres start/stop` (Docker) intentionally deferred**: Java's CLI shells out to `docker run` to manage a local PG container. The C# port skips this surface for v1 — users running the C# CLI typically already have docker tooling, and the testcontainers fixture covers the dev-loop path. Can be added later as a thin process-shell wrapper.
+
+
+### 2026-04-30 — Port Decision Capture
+
+- **Source/Trigger**: DBOS-26 implementation (PR for #5) — `Admin/AdminServer.cs` (HTTP admin endpoints).
+- **Pages created**: —
+- **Pages updated**: —
+- **Notes**:
+  - **`HttpListener` instead of ASP.NET Core**: Java's `AdminServer` uses `com.sun.net.httpserver.HttpServer` — a low-level BCL HTTP listener with no framework dependencies. The C# port uses `System.Net.HttpListener` for the same reason: keeps the core `Dbos.Transact` library free of `Microsoft.AspNetCore.App` framework references and matches Java's choice closely. Ports a custom dispatch loop (`Pattern.compile("/workflows/([^/]+)(/[^/]*)?")` → `Regex` in C#) and JSON shapes via `System.Text.Json`.
+  - **Endpoint surface implemented**: `/dbos-healthz`, `/deactivate`, `/dbos-workflow-queues-metadata`, `/dbos-workflow-recovery`, `/queues`, `/workflows`, `/workflows/{id}`, `/workflows/{id}/steps`, `/workflows/{id}/cancel`, `/workflows/{id}/resume`, `/workflows/{id}/fork` — all match Java path/method/status-code semantics (200, 204, 404, 405, 415, 500).
+  - **Endpoints deferred**: `/dbos-garbage-collect` and `/dbos-global-timeout`. Both require new SystemDatabase DAO methods (`GarbageCollectAsync`, `GlobalTimeoutAsync`) that don't exist yet in the C# port. Not exposed by AdminServer (return 404 like any unmatched route) — to be added when the underlying DAO methods land.
+  - **Drive-by additions to `DbosExecutor`** to back the admin endpoints:
+    - `GetQueues()` — exposes `_queueRegistry.GetSnapshot()` for `/dbos-workflow-queues-metadata`.
+    - `RecoverPendingWorkflowsAsync(executorIds)` — calls `GetPendingWorkflowsAsync` then `ExecuteWorkflowByIdAsync(isRecoveryRequest: true)` for each, returning the dispatched IDs. Mirrors Java's `recoverPendingWorkflows`.
+    - `DeactivateLifecycleListeners()` / `IsDeactivated` — port-fidelity flag toggle. The Java implementation also stops queue/scheduler lifecycle; in C# the equivalent integration would happen via `IDbosLifecycleListener`. v1 is a no-op flag.
+  - **Fork success-path test deferred**: `ForkWorkflowAsync` throws `NotImplementedException` in both Postgres and SQLite DAOs (pre-existing port gap). The fork endpoint is wired and routing is verified via `Fork_GET_Returns405` / `Fork_PostWithoutJson_Returns415`; the success path will be added when the DAO impls land.
