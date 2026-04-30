@@ -1,7 +1,8 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <IsPackable>false</IsPackable>
+    <NoWarn>$(NoWarn);CA1707</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
@@ -9,6 +10,17 @@
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="Testcontainers.PostgreSql" />
+    <PackageReference Include="Microsoft.Data.Sqlite" />
+    <PackageReference Include="Npgsql" />
+    <PackageReference Include="System.CommandLine" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Dbos.Transact\Dbos.Transact.csproj" />
+    <ProjectReference Include="..\..\src\Dbos.Transact.Postgres\Dbos.Transact.Postgres.csproj" />
+    <ProjectReference Include="..\..\src\Dbos.Transact.Sqlite\Dbos.Transact.Sqlite.csproj" />
+    <ProjectReference Include="..\..\src\Dbos.Transact.Cli\Dbos.Transact.Cli.csproj" />
   </ItemGroup>
 
   <ItemGroup>
