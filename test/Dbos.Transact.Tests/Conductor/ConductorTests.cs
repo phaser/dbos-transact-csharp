@@ -75,6 +75,14 @@ public sealed class ConductorTests : IAsyncLifetime, IDisposable
         conductor.Start();
 
         await server.ConnectedAsync.WaitAsync(ReadTimeout);
+
+        // server.ConnectedAsync fires on the server-side accept; the conductor's background task
+        // assigns _activeWebSocket on its own continuation. On slow CI runners that continuation
+        // may not have been scheduled yet, so spin-wait rather than checking immediately.
+        var deadline = DateTime.UtcNow + ReadTimeout;
+        while (!conductor.IsConnected && DateTime.UtcNow < deadline)
+            await Task.Delay(10);
+
         Assert.True(conductor.IsConnected);
     }
 
