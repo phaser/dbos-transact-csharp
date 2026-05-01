@@ -1,5 +1,9 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
+  <PropertyGroup>
+    <Description>PostgreSQL dialect for DBOS — Npgsql-backed workflow persistence with LISTEN/NOTIFY and SKIP LOCKED.</Description>
+  </PropertyGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\Dbos.Transact\Dbos.Transact.csproj" />
   </ItemGroup>

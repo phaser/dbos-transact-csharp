@@ -14,4 +14,36 @@
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
   </PropertyGroup>
 
+  <!-- Shared NuGet package metadata -->
+  <PropertyGroup>
+    <Authors>Cristian Bidea</Authors>
+    <Company>Cristian Bidea</Company>
+    <Copyright>Copyright (c) 2026 Cristian Bidea</Copyright>
+    <PackageProjectUrl>https://github.com/phaser/dbos-transact-csharp</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/phaser/dbos-transact-csharp.git</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageTags>dbos workflow durable orchestration</PackageTags>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <Deterministic>true</Deterministic>
+    <ContinuousIntegrationBuild Condition="'$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
+    <!-- Commits before any tag produce e.g. 0.1.0-alpha.0.5+abcd123 -->
+    <MinVerDefaultPreReleaseIdentifiers>alpha.0</MinVerDefaultPreReleaseIdentifiers>
+  </PropertyGroup>
+
+  <!-- MinVer + SourceLink — apply only to packable projects -->
+  <ItemGroup Condition="'$(IsPackable)' != 'false'">
+    <PackageReference Include="MinVer" PrivateAssets="All" />
+    <PackageReference Include="Microsoft.SourceLink.GitHub" PrivateAssets="All" />
+  </ItemGroup>
+
+  <!-- Bundle the repo-root README into every package -->
+  <ItemGroup Condition="'$(IsPackable)' != 'false'">
+    <None Include="$(MSBuildThisFileDirectory)README.md" Pack="true" PackagePath="" />
+  </ItemGroup>
+
 </Project>
