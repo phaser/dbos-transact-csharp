@@ -8,6 +8,7 @@
   </Folder>
   <Folder Name="/test/">
     <Project Path="test/Dbos.Transact.Cli.Tests/Dbos.Transact.Cli.Tests.csproj" />
+    <Project Path="test/Dbos.Transact.Conformance/Dbos.Transact.Conformance.csproj" />
     <Project Path="test/Dbos.Transact.Hosting.Tests/Dbos.Transact.Hosting.Tests.csproj" />
     <Project Path="test/Dbos.Transact.Tests/Dbos.Transact.Tests.csproj" />
   </Folder>
