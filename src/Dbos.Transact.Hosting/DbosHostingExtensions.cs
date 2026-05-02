@@ -1,3 +1,4 @@
+using System.Reflection;
 using Dbos.Transact.Workflow;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -14,6 +15,11 @@ namespace Dbos.Transact.Hosting;
 /// </summary>
 public static class DbosHostingExtensions
 {
+    // Cached reflection handle for Dbos.RegisterProxy<T>(T, string?).
+    private static readonly MethodInfo RegisterProxyOpenMethod =
+        typeof(Dbos).GetMethod(nameof(Dbos.RegisterProxy), BindingFlags.Public | BindingFlags.Instance)
+        ?? throw new InvalidOperationException($"Method {nameof(Dbos.RegisterProxy)} not found on {nameof(Dbos)}.");
+
     /// <summary>
     /// Registers <see cref="Dbos"/> as a singleton, configures the
     /// <see cref="DbosOptionsConfigurator"/> options chain, and registers
@@ -79,17 +85,76 @@ public static class DbosHostingExtensions
         where TImpl : class, TInterface
     {
         ArgumentNullException.ThrowIfNull(services);
+        AddDbosWorkflowCore(services, typeof(TInterface), typeof(TImpl), instanceName);
+        return services;
+    }
 
-        services.TryAddSingleton<TImpl>();
+    /// <summary>
+    /// Scans <paramref name="assembly"/> for concrete classes that declare methods annotated
+    /// with <c>[Workflow]</c> or <c>[Step]</c> and auto-registers each (interface, impl) pair
+    /// via <see cref="AddDbosWorkflow{TInterface,TImpl}"/>. Each concrete type must implement
+    /// at least one interface that exposes the annotated method signatures; pairs where no
+    /// matching interface can be found are silently skipped.
+    /// </summary>
+    /// <remarks>
+    /// This is opt-in. Explicit <see cref="AddDbosWorkflow{TInterface,TImpl}"/> calls remain
+    /// the primary registration path and are always supported.
+    /// </remarks>
+    public static IServiceCollection AddDbosWorkflowsFromAssembly(
+        this IServiceCollection services,
+        Assembly assembly)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(assembly);
 
-        services.AddSingleton<TInterface>(sp =>
+        foreach (var concreteType in assembly.GetExportedTypes()
+            .Where(t => t.IsClass && !t.IsAbstract))
         {
-            var dbos = sp.GetRequiredService<Dbos>();
-            var impl = sp.GetRequiredService<TImpl>();
-            return dbos.RegisterProxy<TInterface>(impl, instanceName);
-        });
+            if (!HasWorkflowOrStepMethods(concreteType)) continue;
+            foreach (var iface in FindWorkflowInterfaces(concreteType))
+                AddDbosWorkflowCore(services, iface, concreteType, instanceName: null);
+        }
 
-        services.AddSingleton(new DbosWorkflowRegistration(typeof(TInterface), instanceName));
+        return services;
+    }
+
+    /// <summary>
+    /// Inspects already-registered <see cref="IServiceCollection"/> descriptors and
+    /// auto-registers each entry where the service type is an interface, the implementation
+    /// type is a concrete class, and that class declares methods annotated with
+    /// <c>[Workflow]</c> or <c>[Step]</c>.
+    /// </summary>
+    /// <remarks>
+    /// This is opt-in. Pair it with your existing DI registrations before calling
+    /// <c>AddDbos</c>. Explicit <see cref="AddDbosWorkflow{TInterface,TImpl}"/> calls remain
+    /// the primary registration path and are always supported.
+    /// </remarks>
+    public static IServiceCollection AddDbosWorkflowsFromServices(
+        this IServiceCollection services)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+
+        // Snapshot to avoid modifying the collection while enumerating it.
+        var candidates = services
+            .Where(d =>
+                d.ServiceType.IsInterface &&
+                d.ImplementationType is { IsClass: true, IsAbstract: false })
+            .ToList();
+
+        // Collect already-registered Dbos interfaces to avoid duplicate registration.
+        var alreadyRegistered = services
+            .Where(d => d.ServiceType == typeof(DbosWorkflowRegistration))
+            .Select(d => ((DbosWorkflowRegistration)d.ImplementationInstance!).InterfaceType)
+            .ToHashSet();
+
+        foreach (var descriptor in candidates)
+        {
+            var implType = descriptor.ImplementationType!;
+            if (!HasWorkflowOrStepMethods(implType)) continue;
+            if (!alreadyRegistered.Add(descriptor.ServiceType)) continue;
+            AddDbosWorkflowCore(services, descriptor.ServiceType, implType, instanceName: null);
+        }
+
         return services;
     }
 
@@ -103,5 +168,63 @@ public static class DbosHostingExtensions
 
         services.AddSingleton(new DbosQueueRegistration(queue));
         return services;
+    }
+
+    // ── Private helpers ───────────────────────────────────────────────────────
+
+    private static void AddDbosWorkflowCore(
+        IServiceCollection services,
+        Type interfaceType,
+        Type implType,
+        string? instanceName)
+    {
+        var closedRegisterProxy = RegisterProxyOpenMethod.MakeGenericMethod(interfaceType);
+
+        services.TryAddSingleton(implType);
+
+        services.AddSingleton(interfaceType, sp =>
+        {
+            var dbos = sp.GetRequiredService<Dbos>();
+            var impl = sp.GetRequiredService(implType);
+            return closedRegisterProxy.Invoke(dbos, [impl, instanceName])!;
+        });
+
+        services.AddSingleton(new DbosWorkflowRegistration(interfaceType, instanceName));
+    }
+
+    private static bool HasWorkflowOrStepMethods(Type type)
+    {
+        // Check declared methods on the concrete class first; then check its interfaces
+        // because attributes may be placed on the interface method rather than the impl.
+        if (HasAnnotatedMethod(type)) return true;
+        foreach (var iface in type.GetInterfaces())
+            if (HasAnnotatedMethod(iface)) return true;
+        return false;
+
+        static bool HasAnnotatedMethod(Type t) =>
+            t.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly)
+                .Any(m =>
+                    m.IsDefined(typeof(WorkflowAttribute), inherit: false) ||
+                    m.IsDefined(typeof(StepAttribute), inherit: false));
+    }
+
+    private static IEnumerable<Type> FindWorkflowInterfaces(Type concreteType)
+    {
+        // Names of methods annotated on the concrete class (attribute may live there instead of on the iface).
+        var annotatedOnConcrete = concreteType
+            .GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly)
+            .Where(m =>
+                m.IsDefined(typeof(WorkflowAttribute), inherit: false) ||
+                m.IsDefined(typeof(StepAttribute), inherit: false))
+            .Select(m => m.Name)
+            .ToHashSet(StringComparer.Ordinal);
+
+        return concreteType.GetInterfaces()
+            .Where(iface => iface.GetMethods().Any(m =>
+                // Attribute on the interface method itself.
+                m.IsDefined(typeof(WorkflowAttribute), inherit: false) ||
+                m.IsDefined(typeof(StepAttribute), inherit: false) ||
+                // Attribute on the corresponding concrete override.
+                annotatedOnConcrete.Contains(m.Name)));
     }
 }
