@@ -47,6 +47,7 @@ Master catalog of all wiki pages. Every page in the wiki must have an entry here
 | Page | Source | Key Topics | Created |
 |------|--------|------------|---------|
 | [[summaries/design]] | raw/design.md | port scope, repo layout, interception, serialization, dialect abstraction, SQLite production, hosting, CLI, testing, open questions | 2026-04-24 |
+| [[summaries/csharp-programming-guide]] | raw/csharp-programming-guide.md | C# getting-started guide, proxy/attribute model, builder pattern, queues, Java→C# API mapping | 2026-05-02 |
 
 ## Syntheses
 
@@ -56,12 +57,13 @@ Master catalog of all wiki pages. Every page in the wiki must have an entry here
 
 ## Statistics
 
-- **Total pages**: 25
+- **Total pages**: 26
 - **Concepts**: 14
 - **Entities**: 10
-- **Summaries**: 1
+- **Summaries**: 2
 - **Syntheses**: 0
-- **Sources ingested**: 1
-- **High confidence**: 13
+- **Sources ingested**: 2
+- **High confidence**: 14
 - **Medium confidence**: 0
 - **Low confidence**: 0
+- **Last updated**: 2026-05-02

@@ -201,3 +201,16 @@ Each entry follows this format:
   - **Divergence injection test**: After a successful run, `ScenarioRunner.InjectDivergenceAsync` corrupts `workflow_status.status` directly via Npgsql. `DbSnapshotAssertion` re-validates and throws `ConformanceAssertionException` with a structured message naming both expected and actual values — verifying the harness fails clearly, not silently.
   - **Shared container via `IClassFixture`**: The Postgres Testcontainers container is spun up once per test class run (not per test method). Reduced from 3 container startups to 1; test time dropped from ~10 s to ~5 s with no isolation trade-off (each workflow uses a unique UUID).
   - **CA1711 / `Collection` suffix**: xUnit `[CollectionDefinition]` bearer classes are conventionally named `*Collection`, but CA1711 rejects that suffix. Named the bearer class `ConformanceGroup` — the string in `[CollectionDefinition("Conformance")]` / `[Collection("Conformance")]` is what xUnit matches, not the class name.
+
+### 2026-05-02 — Ingest
+
+- **Source/Trigger**: `ingest raw/csharp-programming-guide.md` (translated from https://docs.dbos.dev/java/programming-guide for Dbos.Transact v0.0.0-alpha.0.35)
+- **Pages created**:
+  - `raw/csharp-programming-guide.md` (raw source — immutable)
+  - `summaries/csharp-programming-guide.md`
+- **Pages updated**: `index.md` (added summary entry, bumped totals 25→26, summaries 1→2, sources 1→2, high-confidence 13→14)
+- **Notes**:
+  - Source is a C# translation of the upstream Java programming guide. Key Java→C# mapping documented: `@Workflow`/`@Step` annotations → `[Workflow]`/`[Step]` attributes; `dbos.runStep()` lambda → `[Step]`-annotated proxy methods intercepted by Castle.DynamicProxy; `new DBOS(config)` → `Dbos.Builder(name).UsePostgres(connStr).Build()`; `dbos.launch()` → `await dbos.LaunchAsync()`; `dbos.startWorkflow(supplier)` → `await dbos.StartWorkflowAsync<T>(name, className, null, args, opts)`.
+  - All code examples in the raw source are verified against the actual C# public API (read from source files in `src/Dbos.Transact/`).
+  - SQLite dialect alternative (`UseSqlite`) documented as a zero-dependency local-dev path — not covered in the Java guide.
+  - NuGet package version anchored at `0.0.0-alpha.0.35` (first published alpha, tagged `v0.1.0-alpha.1` on 2026-05-02).
