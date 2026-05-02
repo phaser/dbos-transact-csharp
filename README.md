@@ -2,7 +2,7 @@
 
 A C#/.NET port of [dbos-transact-java](https://github.com/dbos-inc/dbos-transact-java) — a lightweight durable-workflow library built on top of a relational database.
 
-> **Status:** pre-implementation. The design is captured in [`docs/raw/design.md`](docs/raw/design.md); no source code has been committed yet.
+> **Status:** alpha (`0.0.0-alpha.x`) — published to NuGet for early testing. The API closely mirrors the Java reference implementation.
 
 ## What DBOS Transact gives you
 
@@ -13,24 +13,110 @@ A C#/.NET port of [dbos-transact-java](https://github.com/dbos-inc/dbos-transact
 - **Async workflow handles** with status polling and result retrieval.
 - **Admin HTTP endpoints** and **conductor (WebSocket) protocol** parity with the other DBOS runtimes.
 
-## Planned package layout
+## Quick Start
+
+### Install
+
+```bash
+dotnet add package Dbos.Transact --version 0.0.0-alpha.0.35
+dotnet add package Dbos.Transact.Postgres --version 0.0.0-alpha.0.35
+```
+
+Or use SQLite for a zero-dependency local setup:
+
+```bash
+dotnet add package Dbos.Transact --version 0.0.0-alpha.0.35
+dotnet add package Dbos.Transact.Sqlite --version 0.0.0-alpha.0.35
+```
+
+### Declare steps and a workflow
+
+```csharp
+using Dbos.Transact.Workflow;
+
+// Steps — durable, checkpointed on each call
+public interface IMySteps
+{
+    [Step] Task<string> FetchDataAsync(string url);
+    [Step] Task SaveResultAsync(string data);
+}
+
+public sealed class MySteps : IMySteps
+{
+    public async Task<string> FetchDataAsync(string url) { /* ... */ }
+    public async Task SaveResultAsync(string data) { /* ... */ }
+}
+
+// Workflow — resumes from the last completed step after a crash
+public interface IMyWorkflow
+{
+    Task RunAsync(string url);
+}
+
+public sealed class MyWorkflow(IMySteps steps) : IMyWorkflow
+{
+    [Workflow]
+    public async Task RunAsync(string url)
+    {
+        var data = await steps.FetchDataAsync(url);
+        await steps.SaveResultAsync(data);
+    }
+}
+```
+
+### Register, launch, and run
+
+```csharp
+using Dbos.Transact;
+using Dbos.Transact.Sqlite;
+
+await using var dbos = Dbos.Builder("my-app")
+    .UseSqlite("Data Source=myapp.db")
+    .Build();
+
+var stepProxy = dbos.RegisterProxy<IMySteps>(new MySteps());
+dbos.RegisterProxy<IMyWorkflow>(new MyWorkflow(stepProxy));
+
+await dbos.LaunchAsync();
+
+var handle = await dbos.StartWorkflowAsync<object?>(
+    workflowName: nameof(MyWorkflow.RunAsync),
+    className: typeof(MyWorkflow).FullName,
+    instanceName: null,
+    args: ["https://example.com"]);
+
+await handle.GetResultAsync();
+```
+
+With `Microsoft.Extensions.Hosting`:
+
+```csharp
+services.AddDbos("my-app", builder => builder.UsePostgres(connectionString));
+services.AddDbosWorkflow<IMySteps, MySteps>();
+services.AddDbosWorkflow<IMyWorkflow, MyWorkflow>();
+```
+
+For a full walkthrough see [`docs/raw/csharp-programming-guide.md`](docs/raw/csharp-programming-guide.md).
+
+## Packages
 
 | NuGet | Role |
 |---|---|
-| `Dbos.Transact` | Core — dialect-agnostic. Public `[Workflow]` / `[Step]` / `[Scheduled]` surface, executor, registries, portable serializer, migrations. |
+| `Dbos.Transact` | Core — dialect-agnostic. `[Workflow]` / `[Step]` / `[Scheduled]` surface, executor, registries, portable serializer, migrations. |
 | `Dbos.Transact.Postgres` | Npgsql-backed Postgres dialect. `LISTEN`/`NOTIFY`, `SKIP LOCKED`, advisory locks. |
-| `Dbos.Transact.Sqlite` | Microsoft.Data.Sqlite-backed dialect. First-class production target for small single-host projects, with Litestream as the documented backup path. |
+| `Dbos.Transact.Sqlite` | Microsoft.Data.Sqlite-backed dialect. First-class production target for small single-host projects; [Litestream](https://litestream.io) is the documented backup path. |
 | `Dbos.Transact.Hosting` | `Microsoft.Extensions.Hosting` integration — `services.AddDbos(…)` + `AddDbosWorkflow<TInterface, TImpl>()`. |
-| `Dbos.Transact.Cli` | `System.CommandLine`-based CLI (`migrate`, `reset`, `workflow`, `postgres`). |
+| `Dbos.Transact.Cli` | `System.CommandLine`-based CLI (`migrate`, `reset`, `workflow`). |
 
 ## Target framework
 
-`net10.0` — current LTS (released November 2025). `net8.0` multi-targeting can be added later if there is pull from users on the previous LTS.
+`net10.0` (released November 2025, standard-term support). `net8.0` multi-targeting can be added later if there is demand from users on the previous LTS.
 
 ## Documentation
 
-- **Design document:** [`docs/raw/design.md`](docs/raw/design.md) — authoritative source for v1 scope, layout, and decisions.
-- **Knowledge base:** [`docs/wiki/`](docs/wiki/) — LLM-maintained concept, entity, and summary pages. Start at [`docs/wiki/index.md`](docs/wiki/index.md). Schema in [`docs/CLAUDE.md`](docs/CLAUDE.md).
+- **Programming guide:** [`docs/raw/csharp-programming-guide.md`](docs/raw/csharp-programming-guide.md) — workflows, steps, queues, and a Java→C# API mapping table.
+- **Design document:** [`docs/raw/design.md`](docs/raw/design.md) — v1 scope, repo layout, and architecture decisions.
+- **Knowledge base:** [`docs/wiki/`](docs/wiki/) — concept, entity, and summary pages. Start at [`docs/wiki/index.md`](docs/wiki/index.md).
 - **Agent instructions:** [`CLAUDE.md`](CLAUDE.md) — coding conventions, test layout, and knowledge-management protocol for LLM-assisted work on this repo.
 
 ## Upstream references
