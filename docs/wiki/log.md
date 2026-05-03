@@ -202,6 +202,17 @@ Each entry follows this format:
   - **Shared container via `IClassFixture`**: The Postgres Testcontainers container is spun up once per test class run (not per test method). Reduced from 3 container startups to 1; test time dropped from ~10 s to ~5 s with no isolation trade-off (each workflow uses a unique UUID).
   - **CA1711 / `Collection` suffix**: xUnit `[CollectionDefinition]` bearer classes are conventionally named `*Collection`, but CA1711 rejects that suffix. Named the bearer class `ConformanceGroup` — the string in `[CollectionDefinition("Conformance")]` / `[Collection("Conformance")]` is what xUnit matches, not the class name.
 
+### 2026-05-03 — Concept Capture
+
+- **Source/Trigger**: User questions about step retries and workflow recovery (conversation context)
+- **Pages created**:
+  - `concepts/step-retry-policy.md`
+  - `concepts/workflow-recovery.md`
+- **Pages updated**: `index.md` (added 2 entries, bumped totals 26→28, concepts 14→16, high-confidence 14→16)
+- **Notes**:
+  - **`step-retry-policy.md`**: Documents `[Step(RetriesAllowed, MaxAttempts, IntervalSeconds, BackOffRate)]` — the gate flag pattern, deterministic exponential back-off, and the pitfall that `RetriesAllowed = false` forces `maxAttempts = 1` regardless of other settings. No jitter in current implementation.
+  - **`workflow-recovery.md`**: Documents the two external recovery entry points — DBOS Cloud conductor (`RecoveryRequest` WebSocket message → `Conductor.HandleRecoveryAsync`) and admin HTTP endpoint (`POST /dbos-workflow-recovery` → `AdminServer.WorkflowRecoveryAsync`) — both calling `DbosExecutor.RecoverPendingWorkflowsAsync`. Key insight: nothing auto-recovers locally; recovery must be explicitly triggered. Also cross-references the `MaxRecoveryAttempts` overflow bug from DBOS-25.
+
 ### 2026-05-02 — Ingest
 
 - **Source/Trigger**: `ingest raw/csharp-programming-guide.md` (translated from https://docs.dbos.dev/java/programming-guide for Dbos.Transact v0.0.0-alpha.0.35)
