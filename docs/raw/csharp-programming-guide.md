@@ -299,6 +299,67 @@ You can see how all ten run concurrently — even if each takes five seconds, th
 
 ---
 
+## 4. Hosting Integration (`Dbos.Transact.Hosting`)
+
+For production apps built on `IHost` / `WebApplication`, the `Dbos.Transact.Hosting` package provides `IServiceCollection` extensions that wire DBOS into the generic .NET host.
+
+### Install the hosting package
+
+```bash
+dotnet add package Dbos.Transact.Hosting --version 0.0.0-alpha.0.35
+```
+
+### Register DBOS in `Program.cs`
+
+```csharp
+using Dbos.Transact.Hosting;
+using Dbos.Transact.Postgres;
+
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services
+    .AddDbos("my-app", b => b.UsePostgres(
+        builder.Configuration.GetConnectionString("Dbos")!))
+    .AddDbosWorkflow<IExampleSteps, ExampleSteps>()
+    .AddDbosWorkflow<IExampleWorkflow, ExampleWorkflow>()
+    .AddDbosQueue(new Queue("example-queue"));
+
+var app = builder.Build();
+
+app.MapGet("/", async (IExampleWorkflow workflow) =>
+{
+    var handle = await app.Services.GetRequiredService<Dbos>()
+        .StartWorkflowAsync<string>(
+            nameof(ExampleWorkflow.RunAsync),
+            typeof(ExampleWorkflow).FullName!,
+            null,
+            Array.Empty<object?>());
+    return await handle.GetResultAsync();
+});
+
+await app.RunAsync();
+```
+
+`AddDbos` registers `Dbos` as a singleton, configures options, and starts the hosted service lifecycle. `AddDbosWorkflow<TInterface, TImpl>` registers the impl as a singleton and binds the interface to a DBOS-managed proxy — resolving `IExampleWorkflow` from DI returns the durable proxy, not the raw impl.
+
+### Auto-discovery with `AddDbosWorkflowsFromAssembly`
+
+For large projects with many workflow/step classes, you can replace individual `AddDbosWorkflow` calls with a single assembly scan:
+
+```csharp
+builder.Services
+    .AddDbos("my-app", b => b.UsePostgres(connectionString))
+    .AddDbosWorkflowsFromAssembly(typeof(ExampleWorkflow).Assembly);
+```
+
+`AddDbosWorkflowsFromAssembly` scans the given assembly for concrete classes whose methods (or whose interface methods) are annotated with `[Workflow]` or `[Step]`, and auto-registers each `(interface, impl)` pair — the same as calling `AddDbosWorkflow<TInterface, TImpl>` for each one explicitly. Pairs where no matching interface is found are silently skipped.
+
+This is analogous to ASP.NET Core's `AddControllers` / `MapControllers` pattern: opt-in, convention-based, zero manual wiring.
+
+> **Note:** Explicit `AddDbosWorkflow<TInterface, TImpl>` calls are always supported alongside `AddDbosWorkflowsFromAssembly`. If you need per-registration `instanceName` values you must still use the explicit form.
+
+---
+
 ## Key API Mapping: Java → C#
 
 | Java | C# |
@@ -315,11 +376,11 @@ You can see how all ten run concurrently — even if each takes five seconds, th
 | `new StartWorkflowOptions().withQueue("q")` | `new StartWorkflowOptions(queue)` |
 | `dbos.registerQueue(queue)` | `dbos.RegisterQueue(queue)` |
 | `new Queue("name")` | `new Queue("name")` |
+| `@EnableAutoConfiguration` / Spring beans | `AddDbosWorkflowsFromAssembly(assembly)` |
 
 ---
 
 ## Next Steps
 
-- Learn how to add DBOS to your own application.
-- Use `IHostedService` / `IHost` integration via `Dbos.Transact.Hosting` for production apps.
 - Check out the test suite under `test/Dbos.Transact.Tests/` for more patterns.
+- See `test/Dbos.Transact.Hosting.Tests/DbosHostingAutoDiscoveryTests.cs` for examples of assembly-scan registration.
