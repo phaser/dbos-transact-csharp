@@ -119,46 +119,6 @@ public static class DbosHostingExtensions
     }
 
     /// <summary>
-    /// Inspects already-registered <see cref="IServiceCollection"/> descriptors and
-    /// auto-registers each entry where the service type is an interface, the implementation
-    /// type is a concrete class, and that class declares methods annotated with
-    /// <c>[Workflow]</c> or <c>[Step]</c>.
-    /// </summary>
-    /// <remarks>
-    /// This is opt-in. Pair it with your existing DI registrations before calling
-    /// <c>AddDbos</c>. Explicit <see cref="AddDbosWorkflow{TInterface,TImpl}"/> calls remain
-    /// the primary registration path and are always supported.
-    /// </remarks>
-    public static IServiceCollection AddDbosWorkflowsFromServices(
-        this IServiceCollection services)
-    {
-        ArgumentNullException.ThrowIfNull(services);
-
-        // Snapshot to avoid modifying the collection while enumerating it.
-        var candidates = services
-            .Where(d =>
-                d.ServiceType.IsInterface &&
-                d.ImplementationType is { IsClass: true, IsAbstract: false })
-            .ToList();
-
-        // Collect already-registered Dbos interfaces to avoid duplicate registration.
-        var alreadyRegistered = services
-            .Where(d => d.ServiceType == typeof(DbosWorkflowRegistration))
-            .Select(d => ((DbosWorkflowRegistration)d.ImplementationInstance!).InterfaceType)
-            .ToHashSet();
-
-        foreach (var descriptor in candidates)
-        {
-            var implType = descriptor.ImplementationType!;
-            if (!HasWorkflowOrStepMethods(implType)) continue;
-            if (!alreadyRegistered.Add(descriptor.ServiceType)) continue;
-            AddDbosWorkflowCore(services, descriptor.ServiceType, implType, instanceName: null);
-        }
-
-        return services;
-    }
-
-    /// <summary>
     /// Registers a <see cref="Queue"/> with the <see cref="Dbos"/> instance before launch.
     /// </summary>
     public static IServiceCollection AddDbosQueue(this IServiceCollection services, Queue queue)
