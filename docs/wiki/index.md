@@ -1,7 +1,7 @@
 ---
 title: "Knowledge Base Index"
 type: index
-updated: 2026-05-01
+updated: 2026-05-03
 ---
 
 # Knowledge Base Index
@@ -26,6 +26,8 @@ Master catalog of all wiki pages. Every page in the wiki must have an entry here
 | [[concepts/stj-polymorphic-discriminator]] | csharp, serialization, port-decision, conductor-protocol, json, foundational | high | 2026-04-25 |
 | [[concepts/queue-dequeue-flow]] | queues, executor, serialization, port-decision, foundational | high | 2026-04-27 |
 | [[concepts/scheduler-leadership-and-cron]] | scheduler, executor, cron, leadership, port-decision, foundational | high | 2026-04-27 |
+| [[concepts/step-retry-policy]] | core, workflows, steps, retries, resilience, foundational | high | 2026-05-03 |
+| [[concepts/workflow-recovery]] | core, workflows, recovery, resilience, conductor, admin, foundational | high | 2026-05-03 |
 
 ## Entities
 
@@ -57,13 +59,13 @@ Master catalog of all wiki pages. Every page in the wiki must have an entry here
 
 ## Statistics
 
-- **Total pages**: 26
-- **Concepts**: 14
+- **Total pages**: 28
+- **Concepts**: 16
 - **Entities**: 10
 - **Summaries**: 2
 - **Syntheses**: 0
 - **Sources ingested**: 2
-- **High confidence**: 14
+- **High confidence**: 16
 - **Medium confidence**: 0
 - **Low confidence**: 0
-- **Last updated**: 2026-05-02
+- **Last updated**: 2026-05-03
