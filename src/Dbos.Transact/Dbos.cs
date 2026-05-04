@@ -1,4 +1,5 @@
 using System.Reflection;
+using Dbos.Transact.Admin;
 using Dbos.Transact.Context;
 using Dbos.Transact.Database;
 using Dbos.Transact.Execution;
@@ -30,6 +31,7 @@ public sealed class Dbos : IAsyncDisposable
     private DbosExecutor? _executor;
     private QueueService? _queueService;
     private SchedulerService? _schedulerService;
+    private AdminServer? _adminServer;
     private IDbosSerializer? _serializer;
     private bool _launched;
     private bool _disposed;
@@ -158,6 +160,12 @@ public sealed class Dbos : IAsyncDisposable
         _schedulerService = new SchedulerService(_executor, _systemDatabase, _options.SchedulerPollingInterval);
         _schedulerService.Start();
 
+        if (_options.AdminServer)
+        {
+            _adminServer = new AdminServer(_options.AdminServerPort, _executor, _systemDatabase);
+            _adminServer.Start();
+        }
+
         _launched = true;
 
         IDbosLifecycleListener[] snapshot;
@@ -175,6 +183,12 @@ public sealed class Dbos : IAsyncDisposable
         foreach (var l in snapshot)
         {
             try { l.DbosShutDown(); } catch { /* best-effort */ }
+        }
+
+        if (_adminServer is not null)
+        {
+            await _adminServer.DisposeAsync().ConfigureAwait(false);
+            _adminServer = null;
         }
 
         if (_schedulerService is not null)
