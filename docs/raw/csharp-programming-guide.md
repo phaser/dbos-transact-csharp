@@ -452,6 +452,175 @@ If the worker crashes mid-agent-loop, DBOS recovers the workflow on restart, rep
 - **Checkpointed:** every `[Step]+[KernelFunction]` tool method registered via `AddDbosPlugin`. Each tool call is a single step row in `operation_outputs` keyed by `(workflow_id, function_id)`.
 - **Not checkpointed (yet):** raw `IChatCompletionService` calls. The LLM call itself is not durable unless you wrap it in your own `[Step]`-annotated interface. A future release may ship a built-in `DurableChatCompletionService` adapter; for now, mirror the tool-interface pattern for any non-deterministic external call you want replay-safe.
 
+### Complete runnable example: support-triage agent
+
+A two-tool agent that looks up a customer's order and issues a refund. Both tools are durable — once a refund is recorded, a worker crash + restart will replay the workflow without re-issuing it.
+
+**Install packages**
+
+```bash
+dotnet new console -n SupportAgent
+cd SupportAgent
+dotnet add package Dbos.Transact --version 0.0.0-alpha.0.43
+dotnet add package Dbos.Transact.Sqlite --version 0.0.0-alpha.0.43
+dotnet add package Dbos.Transact.SemanticKernel --version 0.0.0-alpha.0.43
+dotnet add package Microsoft.SemanticKernel --version 1.75.0
+dotnet add package Microsoft.SemanticKernel.Connectors.OpenAI --version 1.75.0
+```
+
+**ISupportTools.cs**
+
+```csharp
+using System.ComponentModel;
+using Dbos.Transact.Workflow;
+using Microsoft.SemanticKernel;
+
+public interface ISupportTools
+{
+    [KernelFunction, Description("Look up a customer's most recent order by email.")]
+    [Step]
+    Task<string> LookupOrderAsync(string customerEmail);
+
+    [KernelFunction, Description("Issue a refund for the given order ID. Returns the refund confirmation code.")]
+    [Step(RetriesAllowed = true, MaxAttempts = 3, IntervalSeconds = 2)]
+    Task<string> IssueRefundAsync(string orderId, decimal amountUsd);
+}
+```
+
+**SupportTools.cs** — the concrete impl. In real life these would hit a CRM and a payment processor; here they print and return canned values so you can see the flow.
+
+```csharp
+public sealed class SupportTools : ISupportTools
+{
+    public Task<string> LookupOrderAsync(string customerEmail)
+    {
+        Console.WriteLine($"[tool] LookupOrder({customerEmail})");
+        return Task.FromResult("ORD-7421:$59.99");
+    }
+
+    public Task<string> IssueRefundAsync(string orderId, decimal amountUsd)
+    {
+        Console.WriteLine($"[tool] IssueRefund({orderId}, ${amountUsd}) — calling payment processor");
+        return Task.FromResult($"REFUND-{Guid.NewGuid().ToString()[..8]}");
+    }
+}
+```
+
+**ISupportWorkflow.cs / SupportWorkflow.cs**
+
+```csharp
+using Dbos.Transact.Workflow;
+using Microsoft.SemanticKernel;
+using Microsoft.SemanticKernel.Connectors.OpenAI;
+
+public interface ISupportWorkflow
+{
+    Task<string> HandleAsync(string supportRequest);
+}
+
+public sealed class SupportWorkflow(Kernel kernel) : ISupportWorkflow
+{
+    [Workflow]
+    public async Task<string> HandleAsync(string supportRequest)
+    {
+        var settings = new OpenAIPromptExecutionSettings
+        {
+            FunctionChoiceBehavior = FunctionChoiceBehavior.Auto(),
+        };
+        var prompt = $"""
+            You are a support agent. Use the available tools to resolve this request:
+            "{supportRequest}"
+            When you've resolved it, summarize what you did in one sentence.
+            """;
+        var result = await kernel.InvokePromptAsync(prompt, new(settings));
+        return result.GetValue<string>() ?? "(no response)";
+    }
+}
+```
+
+**Program.cs**
+
+```csharp
+using Dbos.Transact;
+using Dbos.Transact.SemanticKernel;
+using Dbos.Transact.Sqlite;
+using Microsoft.SemanticKernel;
+
+var apiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY")
+    ?? throw new InvalidOperationException("Set OPENAI_API_KEY to run.");
+
+var kernel = Kernel.CreateBuilder()
+    .AddOpenAIChatCompletion("gpt-4o-mini", apiKey)
+    .Build();
+
+await using var dbos = Dbos.Builder("support-agent")
+    .UseSqlite("Data Source=support.db")
+    .Build();
+
+kernel.AddDbosPlugin<ISupportTools>(dbos, new SupportTools(), pluginName: "Support");
+dbos.RegisterProxy<ISupportWorkflow>(new SupportWorkflow(kernel));
+
+await dbos.LaunchAsync();
+
+var workflowId = $"req-{Guid.NewGuid()}";
+var handle = await dbos.StartWorkflowAsync<string>(
+    workflowName: nameof(SupportWorkflow.HandleAsync),
+    className: typeof(SupportWorkflow).FullName,
+    instanceName: null,
+    args: ["My order arrived broken — alice@example.com, please refund."],
+    options: new StartWorkflowOptions(workflowId: workflowId));
+
+Console.WriteLine($"workflow {handle.WorkflowId} started");
+Console.WriteLine($"result: {await handle.GetResultAsync()}");
+
+var steps = await dbos.ListWorkflowStepsAsync(handle.WorkflowId);
+foreach (var s in steps)
+    Console.WriteLine($"  step #{s.FunctionId} {s.FunctionName} → {s.Output}");
+```
+
+**Run it**
+
+```bash
+export OPENAI_API_KEY=sk-...
+dotnet run
+```
+
+Expected output (the LLM may phrase the summary differently):
+
+```
+[tool] LookupOrder(alice@example.com)
+[tool] IssueRefund(ORD-7421, $59.99) — calling payment processor
+workflow req-abc123 started
+result: I looked up Alice's order ORD-7421 ($59.99) and issued refund REFUND-3f8a91c2.
+  step #0 LookupOrderAsync → "ORD-7421:$59.99"
+  step #1 IssueRefundAsync → "REFUND-3f8a91c2"
+```
+
+### Observing durable recovery
+
+The point of DBOS is that the second tool — `IssueRefundAsync`, which calls a payment processor — never fires twice. To see this in action:
+
+1. Run the program once. The two `[tool] ...` lines print and a refund code is generated.
+2. Note the workflow ID (`req-abc123` above).
+3. Modify `Program.cs` to start a workflow with the **same** ID:
+   ```csharp
+   options: new StartWorkflowOptions(workflowId: "req-abc123")  // <-- same as before
+   ```
+4. Run again.
+
+You'll see:
+
+```
+workflow req-abc123 started
+result: I looked up Alice's order ORD-7421 ($59.99) and issued refund REFUND-3f8a91c2.
+  step #0 LookupOrderAsync → "ORD-7421:$59.99"
+  step #1 IssueRefundAsync → "REFUND-3f8a91c2"
+```
+
+Notice: **no `[tool] ...` lines this time**. DBOS recognized the workflow ID, replayed the cached step results from `support.db`, and returned the original refund code without re-invoking either tool. The same mechanism kicks in automatically when a worker crashes mid-workflow and another worker (or the same one after restart) picks it up via recovery.
+
+Note: in this minimal example, the LLM call itself **is** re-issued on replay because it's not wrapped in a `[Step]`. The tool calls are durable; the prompt-completion roundtrip isn't yet (see "What's checkpointed and what isn't" above).
+
 ---
 
 ## Key API Mapping: Java → C#
