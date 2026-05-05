@@ -362,9 +362,16 @@ This is analogous to ASP.NET Core's `AddControllers` / `MapControllers` pattern:
 
 ## 5. Building Durable AI Agents (`Dbos.Transact.SemanticKernel`)
 
-Microsoft Semantic Kernel is the recommended path for AI agents in C#. The `Dbos.Transact.SemanticKernel` package bridges SK's plugin model to DBOS's `[Step]` checkpointing: any tool invoked by an SK kernel or agent — whether via automatic function calling, an agent runner, or a direct `kernel.InvokeAsync(...)` — is recorded to the DBOS system database, replays from cache on workflow recovery, and never re-bills the underlying API call.
+Microsoft Semantic Kernel is the recommended path for AI agents in C#. The `Dbos.Transact.SemanticKernel` package gives you two checkpointed primitives:
 
-This is the C# analogue of the [`dbos-openai-agents`](https://github.com/dbos-inc/dbos-openai) Python package shown on https://dbos.dev.
+1. **`AddDbosPlugin<T>`** — wraps a `[Step]+[KernelFunction]` interface so every tool invocation through the kernel is recorded.
+2. **`AddDurableChatCompletion`** — wraps the kernel's `IChatCompletionService` so every LLM turn is recorded.
+
+Together they let you write an agent loop where **both** the LLM call and each tool call are durable: a worker crash mid-loop replays from cache without re-spending tokens or re-firing tool side effects. This is the C# analogue of the [`dbos-openai-agents`](https://github.com/dbos-inc/dbos-openai) Python package shown on https://dbos.dev.
+
+### Why a manual loop instead of `kernel.InvokePromptAsync`?
+
+SK's auto-function-calling does the LLM round-trip *and* the tool dispatch inside one call. Wrapping that in a single `[Step]` would nest tool steps inside the LLM step — DBOS supports nested step calls but doesn't checkpoint the inner step's context-stack interaction perfectly, so this port treats nested `[Step]`-from-`[Step]` as a non-goal. The fix is to drive the loop yourself: each LLM turn is one top-level step, each tool dispatch is another. The code is a few lines of `while`, and recovery is exact.
 
 ### Define tools as a `[Step]` + `[KernelFunction]` interface
 
@@ -388,14 +395,17 @@ public sealed class WeatherTools : IWeatherTools
 }
 ```
 
-The `[KernelFunction]` attribute makes the method discoverable by Semantic Kernel; `[Step]` makes it durable under DBOS. Both must be on the **interface** method (not the concrete impl) — DBOS's interceptor reads attributes off the interface so the proxy can route calls correctly.
+`[KernelFunction]` makes the method discoverable by SK; `[Step]` makes it durable under DBOS. Both attributes go on the **interface** method — DBOS's interceptor reads attributes off the interface so the proxy can route calls correctly.
 
-### Bridge the plugin to the kernel
+### Wire up the kernel, the plugin, and the durable chat client
 
-Call `kernel.AddDbosPlugin<T>(dbos, impl)` *before* `dbos.LaunchAsync()`. It registers the impl with DBOS as a proxy and adds the matching `KernelPlugin` to the kernel:
+Both `AddDbosPlugin` and `AddDurableChatCompletion` must be called *before* `dbos.LaunchAsync()`.
 
 ```csharp
+using Dbos.Transact;
 using Dbos.Transact.SemanticKernel;
+using Dbos.Transact.Sqlite;
+using Microsoft.SemanticKernel;
 
 var kernel = Kernel.CreateBuilder()
     .AddOpenAIChatCompletion("gpt-4o-mini", apiKey: "...") // or any IChatCompletionService
@@ -406,12 +416,15 @@ await using var dbos = Dbos.Builder("weather-agent")
     .Build();
 
 kernel.AddDbosPlugin<IWeatherTools>(dbos, new WeatherTools(), pluginName: "Weather");
-dbos.RegisterProxy<IAgentWorkflow>(new AgentWorkflow(kernel));
+var chat = kernel.AddDurableChatCompletion(dbos);
+dbos.RegisterProxy<IAgentWorkflow>(new AgentWorkflow(kernel, chat));
 
 await dbos.LaunchAsync();
 ```
 
 ### The agent loop is a `[Workflow]`
+
+The workflow body alternates between **one durable LLM turn** and **dispatching the tool calls it returned**. The loop terminates when the LLM returns a response with no tool calls.
 
 ```csharp
 public interface IAgentWorkflow
@@ -419,23 +432,42 @@ public interface IAgentWorkflow
     Task<string> RunAsync(string userInput);
 }
 
-public sealed class AgentWorkflow(Kernel kernel) : IAgentWorkflow
+public sealed class AgentWorkflow(Kernel kernel, IDurableChatCompletionService chat) : IAgentWorkflow
 {
     [Workflow]
     public async Task<string> RunAsync(string userInput)
     {
-        // The kernel's auto function-calling will dispatch to GetWeatherAsync
-        // through the DBOS proxy → each tool call gets checkpointed.
-        var settings = new OpenAIPromptExecutionSettings
+        var history = new List<DurableChatMessage> { new("user", userInput) };
+
+        for (int turn = 0; turn < 10; turn++)
         {
-            FunctionChoiceBehavior = FunctionChoiceBehavior.Auto(),
-        };
-        var result = await kernel.InvokePromptAsync(userInput, new(settings));
-        return result.GetValue<string>() ?? string.Empty;
+            // Step: one LLM turn (cached on replay → no token re-spend).
+            var response = await chat.CompleteAsync(history);
+
+            if (response.ToolCalls.Count == 0)
+                return response.Content ?? string.Empty;
+
+            history.Add(new DurableChatMessage("assistant", response.Content ?? string.Empty));
+
+            foreach (var call in response.ToolCalls)
+            {
+                var args = new KernelArguments();
+                foreach (var kv in call.Arguments) args[kv.Key] = kv.Value;
+
+                // Step: one tool dispatch (cached on replay → no side-effect re-fire).
+                var toolResult = await kernel.InvokeAsync(call.PluginName, call.FunctionName, args);
+                history.Add(new DurableChatMessage("tool", toolResult.GetValue<string>() ?? string.Empty, ToolCallId: call.Id));
+            }
+        }
+
+        throw new InvalidOperationException("agent exceeded max turns");
     }
 }
+```
 
-// Start the workflow durably:
+Start the workflow durably:
+
+```csharp
 var handle = await dbos.StartWorkflowAsync<string>(
     workflowName: nameof(AgentWorkflow.RunAsync),
     className: typeof(AgentWorkflow).FullName,
@@ -445,12 +477,207 @@ var handle = await dbos.StartWorkflowAsync<string>(
 var answer = await handle.GetResultAsync();
 ```
 
-If the worker crashes mid-agent-loop, DBOS recovers the workflow on restart, replays completed tool calls from the database (without re-invoking them), and resumes at the next pending step.
+### What's checkpointed
 
-### What's checkpointed and what isn't
+Every non-deterministic external call inside the workflow body is a step row in `operation_outputs`:
 
-- **Checkpointed:** every `[Step]+[KernelFunction]` tool method registered via `AddDbosPlugin`. Each tool call is a single step row in `operation_outputs` keyed by `(workflow_id, function_id)`.
-- **Not checkpointed (yet):** raw `IChatCompletionService` calls. The LLM call itself is not durable unless you wrap it in your own `[Step]`-annotated interface. A future release may ship a built-in `DurableChatCompletionService` adapter; for now, mirror the tool-interface pattern for any non-deterministic external call you want replay-safe.
+- **LLM turn** — `IDurableChatCompletionService.CompleteAsync` is `[Step]`-annotated. The full `DurableChatResponse` (text + tool calls) is checkpointed and returned verbatim on replay.
+- **Tool calls** — `kernel.InvokeAsync(plugin, function, args)` routes through the DBOS proxy registered by `AddDbosPlugin`. Each call is its own step.
+
+Replay = no LLM tokens spent + no tool side effects re-fired. The `while` loop walks the same path on every recovery because each step it depends on returns its cached value.
+
+### Complete runnable example: support-triage agent
+
+Two tools (lookup an order, issue a refund) and the agent loop above. Re-running with the same workflow ID demonstrates that the LLM is not re-called and the refund is not re-issued.
+
+**Install packages**
+
+```bash
+dotnet new console -n SupportAgent
+cd SupportAgent
+dotnet add package Dbos.Transact --version 0.0.0-alpha.0.43
+dotnet add package Dbos.Transact.Sqlite --version 0.0.0-alpha.0.43
+dotnet add package Dbos.Transact.SemanticKernel --version 0.0.0-alpha.0.43
+dotnet add package Microsoft.SemanticKernel --version 1.75.0
+dotnet add package Microsoft.SemanticKernel.Connectors.OpenAI --version 1.75.0
+```
+
+**ISupportTools.cs / SupportTools.cs**
+
+```csharp
+using System.ComponentModel;
+using Dbos.Transact.Workflow;
+using Microsoft.SemanticKernel;
+
+public interface ISupportTools
+{
+    [KernelFunction, Description("Look up a customer's most recent order by email.")]
+    [Step]
+    Task<string> LookupOrderAsync(string customerEmail);
+
+    [KernelFunction, Description("Issue a refund for the given order ID and amount in USD. Returns the refund confirmation code.")]
+    [Step(RetriesAllowed = true, MaxAttempts = 3, IntervalSeconds = 2)]
+    Task<string> IssueRefundAsync(string orderId, double amountUsd);
+}
+
+public sealed class SupportTools : ISupportTools
+{
+    public Task<string> LookupOrderAsync(string customerEmail)
+    {
+        Console.WriteLine($"[tool] LookupOrder({customerEmail})");
+        return Task.FromResult("ORD-7421:$59.99");
+    }
+
+    public Task<string> IssueRefundAsync(string orderId, double amountUsd)
+    {
+        Console.WriteLine($"[tool] IssueRefund({orderId}, ${amountUsd}) — calling payment processor");
+        return Task.FromResult($"REFUND-{Guid.NewGuid().ToString()[..8]}");
+    }
+}
+```
+
+**ISupportWorkflow.cs / SupportWorkflow.cs**
+
+```csharp
+using Dbos.Transact.SemanticKernel;
+using Dbos.Transact.Workflow;
+using Microsoft.SemanticKernel;
+
+public interface ISupportWorkflow
+{
+    Task<string> HandleAsync(string supportRequest);
+}
+
+public sealed class SupportWorkflow(Kernel kernel, IDurableChatCompletionService chat) : ISupportWorkflow
+{
+    [Workflow]
+    public async Task<string> HandleAsync(string supportRequest)
+    {
+        var history = new List<DurableChatMessage>
+        {
+            new("system", "You are a support agent. Use the available tools to resolve the request, then summarize what you did in one sentence."),
+            new("user", supportRequest),
+        };
+
+        for (int turn = 0; turn < 10; turn++)
+        {
+            var response = await chat.CompleteAsync(history);
+
+            if (response.ToolCalls.Count == 0)
+                return response.Content ?? string.Empty;
+
+            history.Add(new DurableChatMessage("assistant", response.Content ?? string.Empty));
+
+            foreach (var call in response.ToolCalls)
+            {
+                var args = new KernelArguments();
+                foreach (var kv in call.Arguments) args[kv.Key] = kv.Value;
+
+                Console.WriteLine($"[agent] dispatching {call.PluginName}.{call.FunctionName}({string.Join(", ", call.Arguments.Select(kv => $"{kv.Key}={kv.Value}"))})");
+                var toolResult = await kernel.InvokeAsync(call.PluginName, call.FunctionName, args);
+                history.Add(new DurableChatMessage("tool", toolResult.GetValue<string>() ?? string.Empty, ToolCallId: call.Id));
+            }
+        }
+
+        throw new InvalidOperationException("agent exceeded max turns");
+    }
+}
+```
+
+**Program.cs**
+
+```csharp
+using Dbos.Transact;
+using Dbos.Transact.SemanticKernel;
+using Dbos.Transact.Sqlite;
+using Microsoft.SemanticKernel;
+
+var apiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY")
+    ?? throw new InvalidOperationException("Set OPENAI_API_KEY to run.");
+
+var kernel = Kernel.CreateBuilder()
+    .AddOpenAIChatCompletion("gpt-4o-mini", apiKey)
+    .Build();
+
+await using var dbos = Dbos.Builder("support-agent")
+    .UseSqlite("Data Source=support.db")
+    .Build();
+
+kernel.AddDbosPlugin<ISupportTools>(dbos, new SupportTools(), pluginName: "Support");
+var chat = kernel.AddDurableChatCompletion(dbos);
+dbos.RegisterProxy<ISupportWorkflow>(new SupportWorkflow(kernel, chat));
+
+await dbos.LaunchAsync();
+
+var workflowId = args.Length > 0 ? args[0] : $"req-{Guid.NewGuid()}";
+
+var handle = await dbos.StartWorkflowAsync<string>(
+    workflowName: nameof(SupportWorkflow.HandleAsync),
+    className: typeof(SupportWorkflow).FullName,
+    instanceName: null,
+    args: ["My order arrived broken — alice@example.com, please refund."],
+    options: new StartWorkflowOptions(workflowId: workflowId));
+
+Console.WriteLine($"workflow {handle.WorkflowId} started");
+Console.WriteLine($"result:  {await handle.GetResultAsync()}");
+
+var steps = await dbos.ListWorkflowStepsAsync(handle.WorkflowId);
+foreach (var s in steps)
+    Console.WriteLine($"  step #{s.FunctionId} {s.FunctionName}");
+```
+
+**Run it**
+
+```bash
+export OPENAI_API_KEY=sk-...
+dotnet run
+```
+
+First-run output (the LLM phrasing varies):
+
+```
+[agent] dispatching Support.LookupOrder(customerEmail=alice@example.com)
+[tool] LookupOrder(alice@example.com)
+[agent] dispatching Support.IssueRefund(orderId=ORD-7421, amountUsd=59.99)
+[tool] IssueRefund(ORD-7421, $59.99) — calling payment processor
+workflow req-abc123 started
+result:  I looked up Alice's order ORD-7421 ($59.99) and issued refund REFUND-3f8a91c2.
+  step #0 CompleteAsync
+  step #1 LookupOrderAsync
+  step #2 CompleteAsync
+  step #3 IssueRefundAsync
+  step #4 CompleteAsync
+```
+
+Three `CompleteAsync` steps (LLM turns) and two tool steps. Each is in `operation_outputs` keyed by `(workflow_id, function_id)`.
+
+### Observing durable recovery
+
+Re-run with the same workflow ID:
+
+```bash
+dotnet run -- req-abc123
+```
+
+Output:
+
+```
+workflow req-abc123 started
+result:  I looked up Alice's order ORD-7421 ($59.99) and issued refund REFUND-3f8a91c2.
+  step #0 CompleteAsync
+  step #1 LookupOrderAsync
+  step #2 CompleteAsync
+  step #3 IssueRefundAsync
+  step #4 CompleteAsync
+```
+
+**Notice what's missing:**
+
+- No `[agent] dispatching ...` lines — the workflow body didn't dispatch any tools.
+- No `[tool] ...` lines — the tool implementations didn't run.
+- Same refund code as before — `REFUND-3f8a91c2`, not a fresh one.
+
+DBOS recognized the workflow ID, replayed each cached step result (LLM turns, tool calls) directly from `support.db`, and reconstructed the same final answer without making any external call. Same mechanism kicks in automatically when a worker crashes mid-loop and another worker (or the same one after restart) picks the workflow up via recovery.
 
 ---
 

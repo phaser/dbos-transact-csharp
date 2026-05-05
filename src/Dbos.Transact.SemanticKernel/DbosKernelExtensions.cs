@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Reflection;
 using Dbos.Transact.Workflow;
 using Microsoft.SemanticKernel;
+using Microsoft.SemanticKernel.ChatCompletion;
 
 namespace Dbos.Transact.SemanticKernel;
 
@@ -85,6 +86,32 @@ public static class DbosKernelExtensions
         var plugin = KernelPluginFactory.CreateFromFunctions(resolvedPluginName, description: null, functions);
         kernel.Plugins.Add(plugin);
         return plugin;
+    }
+
+    /// <summary>
+    /// Wraps the kernel's registered <c>IChatCompletionService</c> with a DBOS-checkpointed
+    /// proxy and registers it as <see cref="IDurableChatCompletionService"/>. Each LLM
+    /// turn issued through the returned proxy is recorded as a single step, so workflow
+    /// recovery returns the cached completion instead of re-issuing the request.
+    /// Must be called before <see cref="Dbos.LaunchAsync"/>.
+    /// </summary>
+    /// <param name="kernel">The kernel — must already have an <c>IChatCompletionService</c>
+    /// registered (via <c>AddOpenAIChatCompletion</c>, <c>AddAzureOpenAIChatCompletion</c>, etc.).</param>
+    /// <param name="dbos">The DBOS instance that will own the proxy.</param>
+    /// <param name="instanceName">Optional DBOS instance name.</param>
+    /// <returns>A DBOS-proxied <see cref="IDurableChatCompletionService"/> ready to inject
+    /// into a workflow class.</returns>
+    public static IDurableChatCompletionService AddDurableChatCompletion(
+        this Kernel kernel,
+        Dbos dbos,
+        string? instanceName = null)
+    {
+        ArgumentNullException.ThrowIfNull(kernel);
+        ArgumentNullException.ThrowIfNull(dbos);
+
+        var inner = kernel.GetRequiredService<IChatCompletionService>();
+        var concrete = new DurableChatCompletionService(inner, kernel);
+        return dbos.RegisterProxy<IDurableChatCompletionService>(concrete, instanceName);
     }
 
     private static string StripAsyncSuffix(string name) =>
