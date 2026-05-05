@@ -35,7 +35,8 @@ When porting from an upstream repo (Java, Python, TypeScript), prefer reading a 
 ## Pull Request Rules
 
 - Always include `Closes #<issue-number>` in the PR body so GitHub auto-closes the linked issue on merge.
-- Keep the repo-root `README.md` in sync with merged changes. Whenever a PR ships work that affects what users see — published package versions (after a publish workflow run), the target framework, the package list / roles, the public quick-start API, or the documented hosting integration — update `README.md` in the same PR. Verify the latest published package versions against the live NuGet feed (`https://api.nuget.org/v3-flatcontainer/<package-id>/index.json`) rather than guessing from local `MinVer` output.
+- Keep user-facing docs in sync with merged changes. Whenever a PR ships work that affects what users see — the target framework, the package list / roles, the public quick-start API, or the documented hosting integration — update `README.md` and `docs/raw/csharp-programming-guide.md` in the same PR.
+- Keep pinned package versions current. Any doc or code sample that references a `Dbos.Transact*` NuGet version (currently `README.md` and `docs/raw/csharp-programming-guide.md` — grep for `0.0.0-alpha` to find them all) must be bumped to the latest published version whenever a new publish run lands. Verify the latest version against the live NuGet feed (`https://api.nuget.org/v3-flatcontainer/<package-id>/index.json`) rather than guessing from local `MinVer` output, and confirm all five packages (`Dbos.Transact`, `.Postgres`, `.Sqlite`, `.Hosting`, `.Cli`) are at the same version before bumping.
 
 ## Performance and Algorithm Selection Rules
 

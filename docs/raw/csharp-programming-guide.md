@@ -1,8 +1,8 @@
 # Learn DBOS C# — Programming Guide
 
-> Translated from: https://docs.dbos.dev/java/programming-guide  
-> Source version: Java guide (dev.dbos:transact:0.8.0)  
-> Translated for: Dbos.Transact v0.0.0-alpha.0.35  
+> Translated from: https://docs.dbos.dev/java/programming-guide
+> Source version: Java guide (dev.dbos:transact:0.8.0)
+> Translated for: Dbos.Transact v0.0.0-alpha.0.43
 > Date: 2026-05-02
 
 This guide shows you how to use DBOS to build C# apps that are resilient to any failure.
@@ -28,14 +28,14 @@ cd MyDbosApp
 
 With PostgreSQL:
 ```bash
-dotnet add package Dbos.Transact --version 0.0.0-alpha.0.35
-dotnet add package Dbos.Transact.Postgres --version 0.0.0-alpha.0.35
+dotnet add package Dbos.Transact --version 0.0.0-alpha.0.43
+dotnet add package Dbos.Transact.Postgres --version 0.0.0-alpha.0.43
 ```
 
 Or with SQLite (no Docker required — useful for local development):
 ```bash
-dotnet add package Dbos.Transact --version 0.0.0-alpha.0.35
-dotnet add package Dbos.Transact.Sqlite --version 0.0.0-alpha.0.35
+dotnet add package Dbos.Transact --version 0.0.0-alpha.0.43
+dotnet add package Dbos.Transact.Sqlite --version 0.0.0-alpha.0.43
 ```
 
 ### Start PostgreSQL (Docker, if not already running)
@@ -65,10 +65,10 @@ Data Source=dbos.db
 
 ## 2. Workflows and Steps
 
-DBOS helps you add reliability to .NET programs.  
-The key feature is **workflow methods** comprised of **steps**.  
-DBOS automatically provides durability by checkpointing the state of your workflows and steps to its system database.  
-If your program crashes or is interrupted, DBOS uses this saved state to recover each workflow from its last completed step.  
+DBOS helps you add reliability to .NET programs.
+The key feature is **workflow methods** comprised of **steps**.
+DBOS automatically provides durability by checkpointing the state of your workflows and steps to its system database.
+If your program crashes or is interrupted, DBOS uses this saved state to recover each workflow from its last completed step.
 Thus, DBOS makes your application resilient to any failure.
 
 ### C# design: attributes + proxies
@@ -230,7 +230,7 @@ Step 1 complete
 Step 2 complete
 ```
 
-Press Ctrl+C to stop the app mid-execution (e.g. after "Step 1 complete").  
+Press Ctrl+C to stop the app mid-execution (e.g. after "Step 1 complete").
 Then run `dotnet run` again to restart it. You should see:
 
 ```
@@ -294,7 +294,7 @@ await app.RunAsync();
 
 When you enqueue a workflow via `new StartWorkflowOptions(exampleQueue)`, DBOS executes it **asynchronously** — running it in the background without waiting for it to finish. `StartWorkflowAsync` returns a `WorkflowHandle<T>` representing the state of the enqueued workflow.
 
-This example enqueues ten workflows, then waits for them all to finish using `GetResultAsync()`.  
+This example enqueues ten workflows, then waits for them all to finish using `GetResultAsync()`.
 You can see how all ten run concurrently — even if each takes five seconds, they all finish at roughly the same time.
 
 ---
@@ -306,7 +306,7 @@ For production apps built on `IHost` / `WebApplication`, the `Dbos.Transact.Host
 ### Install the hosting package
 
 ```bash
-dotnet add package Dbos.Transact.Hosting --version 0.0.0-alpha.0.35
+dotnet add package Dbos.Transact.Hosting --version 0.0.0-alpha.0.43
 ```
 
 ### Register DBOS in `Program.cs`
