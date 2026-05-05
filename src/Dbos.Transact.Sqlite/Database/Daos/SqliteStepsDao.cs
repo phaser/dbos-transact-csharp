@@ -38,7 +38,7 @@ public sealed class SqliteStepsDao : StepsDao
 
         var row = await connection.QuerySingleOrDefaultAsync<StepOutputRow>(
             new CommandDefinition(
-                "SELECT output, error, function_name, serialization FROM operation_outputs WHERE workflow_uuid = @WorkflowId AND function_id = @FunctionId",
+                "SELECT output AS Output, error AS Error, function_name AS FunctionName, serialization AS Serialization FROM operation_outputs WHERE workflow_uuid = @WorkflowId AND function_id = @FunctionId",
                 new { WorkflowId = workflowId, FunctionId = functionId }, cancellationToken: ct));
 
         if (row is null)
@@ -82,7 +82,13 @@ public sealed class SqliteStepsDao : StepsDao
         string workflowId, bool loadOutput, int? limit, int? offset, CancellationToken ct = default)
     {
         var sql = new System.Text.StringBuilder("""
-            SELECT function_id, function_name, output, error, child_workflow_id, started_at_epoch_ms, serialization
+            SELECT function_id          AS FunctionId,
+                   function_name        AS FunctionName,
+                   output               AS Output,
+                   error                AS Error,
+                   child_workflow_id    AS ChildWorkflowId,
+                   started_at_epoch_ms  AS StartedAt,
+                   serialization        AS Serialization
             FROM operation_outputs
             WHERE workflow_uuid = @WorkflowId
             ORDER BY function_id

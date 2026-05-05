@@ -154,16 +154,20 @@ Built-in, first-class polymorphism via `[JsonPolymorphic]`/`[JsonDerivedType]`, 
 
 The **portable serializer** (`DbosPortableSerializer`) is the delicate piece — it needs to round-trip with the Python, TypeScript, and Java runtimes against the shared system tables. Interop golden-file tests will be authored using fixtures emitted by the other runtimes.
 
-### Data access — Npgsql + Microsoft.Data.Sqlite, no ORM
+### Data access — Npgsql + Microsoft.Data.Sqlite + Dapper (no full ORM)
 
-EF Core is not used for DBOS internals. Reasons:
+DBOS internals use the raw ADO.NET drivers (`Npgsql`, `Microsoft.Data.Sqlite`) plus **Dapper** as a thin result-mapper. **EF Core (and any other full ORM with change tracking, model builder, LINQ translation, or migrations) is not used** for system-table access.
+
+Reasons EF Core is rejected:
 
 1. **DBOS owns the schema.** System tables are fixed and owned by the library; EF Migrations would fight or entangle user migrations.
 2. **Hot path.** Every step invocation writes a checkpoint. Change tracking, entity materialization, and LINQ translation are pure overhead.
 3. **Postgres-specific features don't LINQ well.** `LISTEN/NOTIFY`, advisory locks, `SELECT … FOR UPDATE SKIP LOCKED`, `jsonb` — all require raw SQL.
 4. **Dependency weight on consumers.** DBOS ships inside user apps; forcing a transitive EF Core dependency is a large ask. Npgsql and Microsoft.Data.Sqlite are light and unopinionated.
 
-**Dapper** sits on top of the raw drivers for DAO ergonomics — removes result-mapping boilerplate without bringing change tracking or a model builder. User-facing workflows remain free to use EF Core, Dapper, or raw SQL; this constraint only applies to DBOS's own system-table access.
+Why Dapper is acceptable: it's a result-mapper, not an ORM in the classic sense. No change tracking, no model builder, no LINQ provider, no migrations — just `IDbConnection.Query<T>` and `Execute`. SQL stays hand-written and dialect-specific. The only convention DBOS DAOs follow is to **alias snake_case columns to PascalCase properties in every SELECT** (`SELECT function_name AS FunctionName, ...`), since Dapper's default mapping is case-insensitive but does not strip underscores.
+
+User-facing workflows remain free to use EF Core, Dapper, or raw SQL — this constraint only applies to DBOS's own system-table access.
 
 ### Dialect abstraction — Postgres + SQLite as peers
 

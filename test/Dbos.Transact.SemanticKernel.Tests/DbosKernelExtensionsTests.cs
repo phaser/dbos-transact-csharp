@@ -92,10 +92,12 @@ file static class SkScenarios
         Assert.True(tools.ObservedInStep);
         Assert.Equal(0, tools.ObservedStepId);
 
-        // The step is durably recorded — exactly one operation_outputs row.
+        // The step is durably recorded — exactly one operation_outputs row,
+        // with the method name surfaced as FunctionName.
         var steps = await dbos.ListWorkflowStepsAsync(handle.WorkflowId);
         Assert.Single(steps);
         Assert.Equal(0, steps[0].FunctionId);
+        Assert.Equal(nameof(WeatherTools.GetWeatherAsync), steps[0].FunctionName);
         Assert.NotNull(steps[0].Output);
     }
 
