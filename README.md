@@ -108,7 +108,7 @@ For a full walkthrough see [`docs/raw/csharp-programming-guide.md`](docs/raw/csh
 | `Dbos.Transact.Postgres` | Npgsql-backed Postgres dialect. `LISTEN`/`NOTIFY`, `SKIP LOCKED`, advisory locks. |
 | `Dbos.Transact.Sqlite` | Microsoft.Data.Sqlite-backed dialect. First-class production target for small single-host projects; [Litestream](https://litestream.io) is the documented backup path. |
 | `Dbos.Transact.Hosting` | `Microsoft.Extensions.Hosting` integration — `services.AddDbos(…)` + `AddDbosWorkflow<TInterface, TImpl>()`. |
-| `Dbos.Transact.SemanticKernel` | Microsoft Semantic Kernel bridge — `kernel.AddDbosPlugin(dbos, tools)` makes every `[Step]+[KernelFunction]` tool invocation by an SK kernel or agent durably checkpointed. |
+| `Dbos.Transact.SemanticKernel` | Microsoft Semantic Kernel bridge. `kernel.AddDbosPlugin(dbos, tools)` checkpoints every `[Step]+[KernelFunction]` tool invocation; `kernel.AddDurableChatCompletion(dbos)` checkpoints every LLM turn. Together they let an agent loop replay end-to-end without re-spending tokens or re-firing tool side effects. |
 | `Dbos.Transact.Cli` | `System.CommandLine`-based CLI (`migrate`, `reset`, `workflow`). |
 
 ## Target framework
