@@ -47,7 +47,9 @@ public sealed class HostedAgentWorkflow : IHostedAgentWorkflow
         // Both injected dependencies are hot-wired by the pre-launch configurators.
         // Each call below is a top-level [Step] checkpointed by DBOS.
         var llm = await _chat.CompleteAsync([new("user", $"weather in {city}?")]).ConfigureAwait(false);
-        var tool = await _kernel.InvokeAsync("Weather", "GetWeather", new() { ["city"] = city }).ConfigureAwait(false);
+        // AddDbosSemanticKernelPluginsFromAssembly registers the plugin under the default
+        // name (interface minus leading I): IWeatherTools → WeatherTools.
+        var tool = await _kernel.InvokeAsync("WeatherTools", "GetWeather", new() { ["city"] = city }).ConfigureAwait(false);
         return $"{llm.Content}|{tool.GetValue<string>()}";
     }
 }

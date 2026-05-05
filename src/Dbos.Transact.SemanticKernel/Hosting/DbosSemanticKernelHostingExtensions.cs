@@ -1,3 +1,5 @@
+using System.Reflection;
+using System.Runtime.CompilerServices;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.SemanticKernel;
@@ -34,16 +36,46 @@ public static class DbosSemanticKernelHostingExtensions
         where TImpl : class, TInterface
     {
         ArgumentNullException.ThrowIfNull(services);
-
-        services.TryAddSingleton<TImpl>();
-        services.AddSingleton<IDbosPreLaunchConfigurator>(sp =>
-        {
-            var kernel = sp.GetRequiredService<Kernel>();
-            var impl = sp.GetRequiredService<TImpl>();
-            return new SemanticKernelPluginConfigurator<TInterface, TImpl>(
-                kernel, impl, pluginName, instanceName);
-        });
+        AddDbosSemanticKernelPluginCore(services, typeof(TInterface), typeof(TImpl), pluginName, instanceName);
         return services;
+    }
+
+    /// <summary>
+    /// Scans <paramref name="assembly"/> for concrete types whose interfaces declare
+    /// <c>[KernelFunction]</c>-decorated methods and auto-registers each
+    /// <c>(interface, impl)</c> pair via
+    /// <see cref="AddDbosSemanticKernelPlugin{TInterface, TImpl}"/>. Each plugin gets the
+    /// default name (interface name with a leading <c>I</c> stripped); use the explicit
+    /// <see cref="AddDbosSemanticKernelPlugin{TInterface, TImpl}"/> overload when you need
+    /// a custom <c>pluginName</c> or <c>instanceName</c>.
+    /// </summary>
+    public static IServiceCollection AddDbosSemanticKernelPluginsFromAssembly(
+        this IServiceCollection services,
+        Assembly assembly)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(assembly);
+
+        foreach (var concreteType in assembly.GetExportedTypes()
+            .Where(t => t.IsClass && !t.IsAbstract))
+        {
+            foreach (var iface in FindKernelPluginInterfaces(concreteType))
+                AddDbosSemanticKernelPluginCore(services, iface, concreteType, pluginName: null, instanceName: null);
+        }
+
+        return services;
+    }
+
+    /// <summary>
+    /// Convenience overload of
+    /// <see cref="AddDbosSemanticKernelPluginsFromAssembly(IServiceCollection, Assembly)"/>
+    /// that infers the caller's assembly via <see cref="Assembly.GetCallingAssembly"/>.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    public static IServiceCollection AddDbosSemanticKernelPluginsFromAssembly(this IServiceCollection services)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        return AddDbosSemanticKernelPluginsFromAssembly(services, Assembly.GetCallingAssembly());
     }
 
     /// <summary>
@@ -78,4 +110,41 @@ public static class DbosSemanticKernelHostingExtensions
         });
         return services;
     }
+
+    // ── Private helpers ───────────────────────────────────────────────────────
+
+    private static readonly Type GenericConfiguratorOpenType =
+        typeof(SemanticKernelPluginConfigurator<,>);
+
+    private static void AddDbosSemanticKernelPluginCore(
+        IServiceCollection services,
+        Type interfaceType,
+        Type implType,
+        string? pluginName,
+        string? instanceName)
+    {
+        services.TryAddSingleton(implType);
+
+        // Build a SemanticKernelPluginConfigurator<TInterface, TImpl> via reflection so the
+        // generic registration helper above and the assembly-scan path can share one core.
+        var closedConfiguratorType = GenericConfiguratorOpenType.MakeGenericType(interfaceType, implType);
+        var ctor = closedConfiguratorType.GetConstructors()[0];
+
+        services.AddSingleton(typeof(IDbosPreLaunchConfigurator), sp =>
+        {
+            var kernel = sp.GetRequiredService<Kernel>();
+            var impl = sp.GetRequiredService(implType);
+            return ctor.Invoke([kernel, impl, pluginName, instanceName]);
+        });
+    }
+
+    // Soft-coupled detection — string-match the attribute type so the assembly-scan path
+    // never has to reference Microsoft.SemanticKernel attribute types directly.
+    private const string KernelFunctionAttributeFullName = "Microsoft.SemanticKernel.KernelFunctionAttribute";
+
+    private static IEnumerable<Type> FindKernelPluginInterfaces(Type concreteType) =>
+        concreteType.GetInterfaces()
+            .Where(iface => iface.GetMethods().Any(m =>
+                m.GetCustomAttributesData().Any(a =>
+                    string.Equals(a.AttributeType.FullName, KernelFunctionAttributeFullName, StringComparison.Ordinal))));
 }

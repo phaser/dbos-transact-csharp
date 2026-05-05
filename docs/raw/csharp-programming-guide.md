@@ -703,9 +703,9 @@ builder.Services.AddSingleton(sp => Kernel.CreateBuilder()
 
 builder.Services.AddDbos("support-agent", b => b.UseSqlite("Data Source=support.db"));
 
-builder.Services.AddDbosSemanticKernelPlugin<ISupportTools, SupportTools>(pluginName: "Support");
+builder.Services.AddDbosSemanticKernelPluginsFromAssembly(); // discovers ISupportTools
 builder.Services.AddDbosDurableChatCompletion();
-builder.Services.AddDbosWorkflowsFromAssembly(); // discovers SupportWorkflow
+builder.Services.AddDbosWorkflowsFromAssembly();              // discovers SupportWorkflow
 
 await builder.Build().RunAsync();
 ```

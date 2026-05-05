@@ -71,12 +71,12 @@ file static class HostedScenarios
 
         configureDbos(hostBuilder.Services);
 
-        hostBuilder.Services.AddDbosSemanticKernelPlugin<IWeatherTools, WeatherTools>(pluginName: "Weather");
+        // Discovery side: SK plugins (any interface with [KernelFunction] methods) are
+        // registered via the SK scanner; regular workflows ([Workflow]/[Step] only) are
+        // registered via the DBOS scanner. The DBOS scanner skips [KernelFunction]
+        // interfaces so they aren't double-registered.
+        hostBuilder.Services.AddDbosSemanticKernelPluginsFromAssembly();
         hostBuilder.Services.AddDbosDurableChatCompletion();
-        // Assembly scan picks up HostedAgentWorkflow (registered as IHostedAgentWorkflow)
-        // and skips IWeatherTools because its methods carry [KernelFunction] — that interface
-        // is owned by the AddDbosSemanticKernelPlugin call above. If the scan didn't skip it,
-        // both registrations would fight to call Dbos.RegisterProxy<IWeatherTools> at launch.
         hostBuilder.Services.AddDbosWorkflowsFromAssembly();
 
         using var host = hostBuilder.Build();
