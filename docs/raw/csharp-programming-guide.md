@@ -679,6 +679,46 @@ result:  I looked up Alice's order ORD-7421 ($59.99) and issued refund REFUND-3f
 
 DBOS recognized the workflow ID, replayed each cached step result (LLM turns, tool calls) directly from `support.db`, and reconstructed the same final answer without making any external call. Same mechanism kicks in automatically when a worker crashes mid-loop and another worker (or the same one after restart) picks the workflow up via recovery.
 
+### Hosted setup (`Microsoft.Extensions.Hosting`)
+
+If your app already uses the generic .NET host (typical for ASP.NET Core / worker services), the SK package ships matching `IServiceCollection` extensions so the agent wiring is fully declarative — no manual `dbos.RegisterProxy` calls, no choreography between "build kernel" and "launch DBOS".
+
+```bash
+dotnet add package Dbos.Transact.Hosting --version 0.0.0-alpha.0.43
+```
+
+```csharp
+using Dbos.Transact;
+using Dbos.Transact.Hosting;
+using Dbos.Transact.SemanticKernel;
+using Dbos.Transact.SemanticKernel.Hosting;
+using Dbos.Transact.Sqlite;
+using Microsoft.SemanticKernel;
+
+var builder = Host.CreateApplicationBuilder(args);
+
+builder.Services.AddSingleton(sp => Kernel.CreateBuilder()
+    .AddOpenAIChatCompletion("gpt-4o-mini", Environment.GetEnvironmentVariable("OPENAI_API_KEY")!)
+    .Build());
+
+builder.Services.AddDbos("support-agent", b => b.UseSqlite("Data Source=support.db"));
+
+builder.Services.AddDbosSemanticKernelPlugin<ISupportTools, SupportTools>(pluginName: "Support");
+builder.Services.AddDbosDurableChatCompletion();
+builder.Services.AddDbosWorkflow<ISupportWorkflow, SupportWorkflow>();
+
+await builder.Build().RunAsync();
+```
+
+That's the whole `Program.cs`. The workflow class still injects `Kernel` and `IDurableChatCompletionService` exactly like the standalone version — DI provides them.
+
+**Mechanism.** `Dbos.Transact.Hosting` exposes a small lifecycle hook, `IDbosPreLaunchConfigurator`. `DbosHostedService` resolves all configurators from DI during `StartAsync` and runs them before workflow registration and before `LaunchAsync`. The SK helpers register configurators that:
+
+- `AddDbosSemanticKernelPlugin<TInterface, TImpl>` — at launch, calls `kernel.AddDbosPlugin<TInterface>(dbos, impl)`.
+- `AddDbosDurableChatCompletion` — at launch, calls `kernel.AddDurableChatCompletion(dbos)` and stores the resulting proxy in a DI-scoped holder. Workflow classes that injected `IDurableChatCompletionService` receive it from the holder once configurators have run.
+
+The "register before launch" invariant is preserved automatically; ordering is `queues → pre-launch configurators → workflow proxies → LaunchAsync`.
+
 ---
 
 ## Key API Mapping: Java → C#
