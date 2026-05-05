@@ -21,6 +21,8 @@
     <PackageVersion Include="Microsoft.Extensions.Hosting" Version="9.0.4" />
     <PackageVersion Include="Microsoft.Extensions.Configuration" Version="9.0.4" />
     <PackageVersion Include="System.CommandLine" Version="2.0.7" />
+    <PackageVersion Include="Microsoft.SemanticKernel.Abstractions" Version="1.75.0" />
+    <PackageVersion Include="Microsoft.SemanticKernel.Core" Version="1.75.0" />
   </ItemGroup>
 
   <!-- Packaging tooling (PrivateAssets=All — build-time only) -->

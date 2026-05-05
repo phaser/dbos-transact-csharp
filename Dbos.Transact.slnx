@@ -3,6 +3,7 @@
     <Project Path="src/Dbos.Transact.Cli/Dbos.Transact.Cli.csproj" />
     <Project Path="src/Dbos.Transact.Hosting/Dbos.Transact.Hosting.csproj" />
     <Project Path="src/Dbos.Transact.Postgres/Dbos.Transact.Postgres.csproj" />
+    <Project Path="src/Dbos.Transact.SemanticKernel/Dbos.Transact.SemanticKernel.csproj" />
     <Project Path="src/Dbos.Transact.Sqlite/Dbos.Transact.Sqlite.csproj" />
     <Project Path="src/Dbos.Transact/Dbos.Transact.csproj" />
   </Folder>
@@ -10,6 +11,7 @@
     <Project Path="test/Dbos.Transact.Cli.Tests/Dbos.Transact.Cli.Tests.csproj" />
     <Project Path="test/Dbos.Transact.Conformance/Dbos.Transact.Conformance.csproj" />
     <Project Path="test/Dbos.Transact.Hosting.Tests/Dbos.Transact.Hosting.Tests.csproj" />
+    <Project Path="test/Dbos.Transact.SemanticKernel.Tests/Dbos.Transact.SemanticKernel.Tests.csproj" />
     <Project Path="test/Dbos.Transact.Tests/Dbos.Transact.Tests.csproj" />
   </Folder>
 </Solution>

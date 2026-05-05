@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Description>Microsoft Semantic Kernel integration for DBOS — bridges SK plugins to [Step] checkpointing so each tool invocation by an SK kernel or agent is durable.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Dbos.Transact\Dbos.Transact.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.SemanticKernel.Abstractions" />
+    <PackageReference Include="Microsoft.SemanticKernel.Core" />
+  </ItemGroup>
+
+</Project>
