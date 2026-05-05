@@ -12,6 +12,7 @@
     <PackageReference Include="xunit.runner.visualstudio" />
     <PackageReference Include="Microsoft.SemanticKernel.Abstractions" />
     <PackageReference Include="Microsoft.SemanticKernel.Core" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
   </ItemGroup>
 
   <ItemGroup>
@@ -22,6 +23,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Dbos.Transact\Dbos.Transact.csproj" />
+    <ProjectReference Include="..\..\src\Dbos.Transact.Hosting\Dbos.Transact.Hosting.csproj" />
     <ProjectReference Include="..\..\src\Dbos.Transact.Postgres\Dbos.Transact.Postgres.csproj" />
     <ProjectReference Include="..\..\src\Dbos.Transact.SemanticKernel\Dbos.Transact.SemanticKernel.csproj" />
     <ProjectReference Include="..\..\src\Dbos.Transact.Sqlite\Dbos.Transact.Sqlite.csproj" />

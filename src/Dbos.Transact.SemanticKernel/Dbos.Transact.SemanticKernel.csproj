@@ -11,6 +11,13 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.SemanticKernel.Abstractions" />
     <PackageReference Include="Microsoft.SemanticKernel.Core" />
+    <!--
+      Microsoft.Extensions.DependencyInjection.Abstractions is consumed transitively
+      from Semantic Kernel (which pins it ≥ 10.0.6 today). We deliberately avoid an
+      explicit version-pinned reference here because the central 9.0.4 pin used
+      elsewhere in the solution would trigger a NU1605 downgrade against SK's
+      transitive 10.0.6 requirement.
+    -->
   </ItemGroup>
 
 </Project>
