@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using Dbos.Transact.Workflow;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -119,6 +120,19 @@ public static class DbosHostingExtensions
     }
 
     /// <summary>
+    /// Convenience overload of <see cref="AddDbosWorkflowsFromAssembly(IServiceCollection, Assembly)"/>
+    /// that infers the caller's assembly via <see cref="Assembly.GetCallingAssembly"/>. Use this
+    /// from <c>Program.cs</c> (the app's own assembly) where the explicit
+    /// <c>typeof(SomeType).Assembly</c> argument is just boilerplate.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    public static IServiceCollection AddDbosWorkflowsFromAssembly(this IServiceCollection services)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        return AddDbosWorkflowsFromAssembly(services, Assembly.GetCallingAssembly());
+    }
+
+    /// <summary>
     /// Registers a <see cref="Queue"/> with the <see cref="Dbos"/> instance before launch.
     /// </summary>
     public static IServiceCollection AddDbosQueue(this IServiceCollection services, Queue queue)
@@ -180,11 +194,31 @@ public static class DbosHostingExtensions
             .ToHashSet(StringComparer.Ordinal);
 
         return concreteType.GetInterfaces()
-            .Where(iface => iface.GetMethods().Any(m =>
-                // Attribute on the interface method itself.
-                m.IsDefined(typeof(WorkflowAttribute), inherit: false) ||
-                m.IsDefined(typeof(StepAttribute), inherit: false) ||
-                // Attribute on the corresponding concrete override.
-                annotatedOnConcrete.Contains(m.Name)));
+            .Where(iface =>
+                iface.GetMethods().Any(m =>
+                    // Attribute on the interface method itself.
+                    m.IsDefined(typeof(WorkflowAttribute), inherit: false) ||
+                    m.IsDefined(typeof(StepAttribute), inherit: false) ||
+                    // Attribute on the corresponding concrete override.
+                    annotatedOnConcrete.Contains(m.Name))
+                // Skip interfaces that integration packages own (e.g. SemanticKernel
+                // tool plugins). The integration's explicit registration call —
+                // AddDbosSemanticKernelPlugin<TInterface, TImpl>(...) — handles the
+                // proxy registration; the assembly scan registering it again would
+                // produce a duplicate Dbos.RegisterProxy at launch.
+                && !IsIntegrationOwnedInterface(iface));
     }
+
+    // Soft-coupled detection — string-match the attribute type so this assembly does not
+    // need to reference Microsoft.SemanticKernel (or any future integration's) types.
+    private static readonly string[] IntegrationOwnedAttributeTypeNames =
+    [
+        "Microsoft.SemanticKernel.KernelFunctionAttribute",
+    ];
+
+    private static bool IsIntegrationOwnedInterface(Type iface) =>
+        iface.GetMethods().Any(m =>
+            m.GetCustomAttributesData().Any(a =>
+                IntegrationOwnedAttributeTypeNames.Contains(
+                    a.AttributeType.FullName, StringComparer.Ordinal)));
 }

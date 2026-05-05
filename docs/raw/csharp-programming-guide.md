@@ -705,7 +705,7 @@ builder.Services.AddDbos("support-agent", b => b.UseSqlite("Data Source=support.
 
 builder.Services.AddDbosSemanticKernelPlugin<ISupportTools, SupportTools>(pluginName: "Support");
 builder.Services.AddDbosDurableChatCompletion();
-builder.Services.AddDbosWorkflow<ISupportWorkflow, SupportWorkflow>();
+builder.Services.AddDbosWorkflowsFromAssembly(); // discovers SupportWorkflow
 
 await builder.Build().RunAsync();
 ```

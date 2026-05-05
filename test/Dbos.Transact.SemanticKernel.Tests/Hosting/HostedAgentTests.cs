@@ -1,12 +1,11 @@
-using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using Dbos.Transact.Hosting;
 using Dbos.Transact.Migrations;
 using Dbos.Transact.Postgres;
 using Dbos.Transact.SemanticKernel.Hosting;
+using Dbos.Transact.SemanticKernel.Tests.Hosting.Fixtures;
 using Dbos.Transact.Sqlite;
 using Dbos.Transact.Tests.Fixtures;
-using Dbos.Transact.Workflow;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -16,7 +15,7 @@ using Npgsql;
 
 namespace Dbos.Transact.SemanticKernel.Tests.Hosting;
 
-#pragma warning disable CA1812 // proxied/instantiated via reflection / DI
+#pragma warning disable CA1812 // instantiated by DI
 file sealed class FakeWeatherChatService : IChatCompletionService
 {
     public int InvocationCount { get; private set; }
@@ -50,50 +49,6 @@ file sealed class FakeWeatherChatService : IChatCompletionService
         yield break;
     }
 }
-
-file interface IWeatherTools
-{
-    [KernelFunction, Description("Get the weather for a city.")]
-    [Step]
-    Task<string> GetWeatherAsync(string city);
-}
-
-file sealed class WeatherTools : IWeatherTools
-{
-    public int InvocationCount { get; private set; }
-    public Task<string> GetWeatherAsync(string city)
-    {
-        InvocationCount++;
-        return Task.FromResult($"Sunny in {city}");
-    }
-}
-
-file interface IHostedAgentWorkflow
-{
-    Task<string> RunAsync(string city);
-}
-
-file sealed class HostedAgentWorkflow : IHostedAgentWorkflow
-{
-    private readonly Kernel _kernel;
-    private readonly IDurableChatCompletionService _chat;
-
-    public HostedAgentWorkflow(Kernel kernel, IDurableChatCompletionService chat)
-    {
-        _kernel = kernel;
-        _chat = chat;
-    }
-
-    [Workflow]
-    public async Task<string> RunAsync(string city)
-    {
-        // Both injected dependencies are hot-wired by the pre-launch configurators.
-        // Each call below is a top-level [Step] checkpointed by DBOS.
-        var llm = await _chat.CompleteAsync([new("user", $"weather in {city}?")]).ConfigureAwait(false);
-        var tool = await _kernel.InvokeAsync("Weather", "GetWeather", new() { ["city"] = city }).ConfigureAwait(false);
-        return $"{llm.Content}|{tool.GetValue<string>()}";
-    }
-}
 #pragma warning restore CA1812
 
 file static class HostedScenarios
@@ -118,7 +73,11 @@ file static class HostedScenarios
 
         hostBuilder.Services.AddDbosSemanticKernelPlugin<IWeatherTools, WeatherTools>(pluginName: "Weather");
         hostBuilder.Services.AddDbosDurableChatCompletion();
-        hostBuilder.Services.AddDbosWorkflow<IHostedAgentWorkflow, HostedAgentWorkflow>();
+        // Assembly scan picks up HostedAgentWorkflow (registered as IHostedAgentWorkflow)
+        // and skips IWeatherTools because its methods carry [KernelFunction] — that interface
+        // is owned by the AddDbosSemanticKernelPlugin call above. If the scan didn't skip it,
+        // both registrations would fight to call Dbos.RegisterProxy<IWeatherTools> at launch.
+        hostBuilder.Services.AddDbosWorkflowsFromAssembly();
 
         using var host = hostBuilder.Build();
         await host.StartAsync().ConfigureAwait(false);
