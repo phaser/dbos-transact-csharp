@@ -18,15 +18,15 @@ A C#/.NET port of [dbos-transact-java](https://github.com/dbos-inc/dbos-transact
 ### Install
 
 ```bash
-dotnet add package Dbos.Transact --version 0.0.0-alpha.0.35
-dotnet add package Dbos.Transact.Postgres --version 0.0.0-alpha.0.35
+dotnet add package Dbos.Transact --version 0.0.0-alpha.0.43
+dotnet add package Dbos.Transact.Postgres --version 0.0.0-alpha.0.43
 ```
 
 Or use SQLite for a zero-dependency local setup:
 
 ```bash
-dotnet add package Dbos.Transact --version 0.0.0-alpha.0.35
-dotnet add package Dbos.Transact.Sqlite --version 0.0.0-alpha.0.35
+dotnet add package Dbos.Transact --version 0.0.0-alpha.0.43
+dotnet add package Dbos.Transact.Sqlite --version 0.0.0-alpha.0.43
 ```
 
 ### Declare steps and a workflow
@@ -94,6 +94,8 @@ With `Microsoft.Extensions.Hosting`:
 services.AddDbos("my-app", builder => builder.UsePostgres(connectionString));
 services.AddDbosWorkflow<IMySteps, MySteps>();
 services.AddDbosWorkflow<IMyWorkflow, MyWorkflow>();
+// Or auto-register every [Workflow]/[Step]/[Scheduled]-bearing type in an assembly:
+// services.AddDbosWorkflowsFromAssembly(typeof(Program).Assembly);
 ```
 
 For a full walkthrough see [`docs/raw/csharp-programming-guide.md`](docs/raw/csharp-programming-guide.md).
@@ -110,7 +112,7 @@ For a full walkthrough see [`docs/raw/csharp-programming-guide.md`](docs/raw/csh
 
 ## Target framework
 
-`net10.0` (released November 2025, standard-term support). `net8.0` multi-targeting can be added later if there is demand from users on the previous LTS.
+`net8.0` (current LTS). Multi-targeting `net10.0` can be added later if there is demand.
 
 ## Documentation
 

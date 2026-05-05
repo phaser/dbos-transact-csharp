@@ -35,6 +35,7 @@ When porting from an upstream repo (Java, Python, TypeScript), prefer reading a 
 ## Pull Request Rules
 
 - Always include `Closes #<issue-number>` in the PR body so GitHub auto-closes the linked issue on merge.
+- Keep the repo-root `README.md` in sync with merged changes. Whenever a PR ships work that affects what users see — published package versions (after a publish workflow run), the target framework, the package list / roles, the public quick-start API, or the documented hosting integration — update `README.md` in the same PR. Verify the latest published package versions against the live NuGet feed (`https://api.nuget.org/v3-flatcontainer/<package-id>/index.json`) rather than guessing from local `MinVer` output.
 
 ## Performance and Algorithm Selection Rules
 
