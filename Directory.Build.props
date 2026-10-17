@@ -33,6 +33,8 @@
     <ContinuousIntegrationBuild Condition="'$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
     <!-- Commits before any tag produce e.g. 0.1.0-alpha.0.5+abcd123 -->
     <MinVerDefaultPreReleaseIdentifiers>alpha.0</MinVerDefaultPreReleaseIdentifiers>
+    <!-- Release tags are v-prefixed (v0.1.1). Without this MinVer ignores them. -->
+    <MinVerTagPrefix>v</MinVerTagPrefix>
   </PropertyGroup>
 
   <!-- MinVer + SourceLink — apply only to packable projects -->
